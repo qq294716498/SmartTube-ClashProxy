@@ -266,7 +266,4 @@ dependencies {
     // ByeByeDPI fix
     implementation 'org.conscrypt:conscrypt-android:' + conscryptVersion
 
-    // Downloaded and checksum-verified by scripts/fetch-libmihomo.sh.
-    // Keep this dependency flavor-scoped so official SmartTube variants stay unchanged.
-    stproxyImplementation files('libs/libmihomo-android-v0.3.3.aar')
 }
