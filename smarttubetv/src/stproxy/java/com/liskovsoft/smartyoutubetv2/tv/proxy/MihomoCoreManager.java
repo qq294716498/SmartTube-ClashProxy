@@ -1,7 +1,11 @@
 package com.liskovsoft.smartyoutubetv2.tv.proxy;
 
+import android.content.ContentValues;
 import android.content.Context;
+import android.net.Uri;
 import android.os.Build;
+import android.os.Environment;
+import android.provider.MediaStore;
 import android.util.Log;
 
 import org.json.JSONException;
@@ -11,10 +15,16 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.text.SimpleDateFormat;
 import java.util.Collections;
+import java.util.Date;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -44,6 +54,7 @@ public final class MihomoCoreManager {
     private static final String DIAGNOSTIC_PREFS = "mihomo_startup_diagnostics";
     private static final String KEY_DIAGNOSTIC_STAGE = "stage";
     private static final String KEY_DIAGNOSTIC_TIME = "time";
+    private static final String DIAGNOSTIC_LOG_FILE = "mihomo-initialization.log";
     private static final int READY_TIMEOUT_MS = 8_000;
     private static final int CONNECT_TIMEOUT_MS = 200;
     private static final int RETRY_DELAY_MS = 100;
@@ -73,6 +84,7 @@ public final class MihomoCoreManager {
 
     private static volatile String lastError;
     private static volatile Context appContext;
+    private static volatile boolean crashHandlerInstalled;
 
     private MihomoCoreManager() {
     }
@@ -99,6 +111,59 @@ public final class MihomoCoreManager {
         return context.getApplicationContext()
                 .getSharedPreferences(DIAGNOSTIC_PREFS, Context.MODE_PRIVATE)
                 .getString(KEY_DIAGNOSTIC_STAGE, "尚未测试");
+    }
+
+    public static synchronized void installDiagnosticCrashHandler(Context context) {
+        if (crashHandlerInstalled) {
+            return;
+        }
+        Context application = context.getApplicationContext();
+        Thread.UncaughtExceptionHandler previous = Thread.getDefaultUncaughtExceptionHandler();
+        Thread.setDefaultUncaughtExceptionHandler((thread, error) -> {
+            appendDiagnostic(application, "未捕获异常，线程=" + thread.getName());
+            appendDiagnostic(application, stackTrace(error));
+            if (previous != null) {
+                previous.uncaughtException(thread, error);
+            }
+        });
+        crashHandlerInstalled = true;
+    }
+
+    public static String exportDiagnosticLog(Context context) {
+        Context application = context.getApplicationContext();
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            return "当前系统不支持免权限导出";
+        }
+
+        String timestamp = new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(new Date());
+        String fileName = "mihomo-diagnostics-" + timestamp + ".txt";
+        ContentValues values = new ContentValues();
+        values.put(MediaStore.MediaColumns.DISPLAY_NAME, fileName);
+        values.put(MediaStore.MediaColumns.MIME_TYPE, "text/plain");
+        values.put(MediaStore.MediaColumns.RELATIVE_PATH,
+                Environment.DIRECTORY_DOWNLOADS + "/SmartTube-Proxy");
+        values.put(MediaStore.MediaColumns.IS_PENDING, 1);
+
+        Uri uri = application.getContentResolver().insert(
+                MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+        if (uri == null) {
+            return "导出失败：无法创建下载文件";
+        }
+
+        try (OutputStream output = application.getContentResolver().openOutputStream(uri)) {
+            if (output == null) {
+                throw new IOException("Unable to open output stream");
+            }
+            output.write(buildDiagnosticReport(application).getBytes(StandardCharsets.UTF_8));
+            output.flush();
+            values.clear();
+            values.put(MediaStore.MediaColumns.IS_PENDING, 0);
+            application.getContentResolver().update(uri, values, null, null);
+            return "下载/SmartTube-Proxy/" + fileName;
+        } catch (Throwable error) {
+            application.getContentResolver().delete(uri, null, null);
+            return "导出失败：" + error.getMessage();
+        }
     }
 
     public static State getState() {
@@ -419,12 +484,77 @@ public final class MihomoCoreManager {
         if (context == null) {
             return;
         }
-        context.getApplicationContext()
-                .getSharedPreferences(DIAGNOSTIC_PREFS, Context.MODE_PRIVATE)
+        Context application = context.getApplicationContext();
+        application.getSharedPreferences(DIAGNOSTIC_PREFS, Context.MODE_PRIVATE)
                 .edit()
                 .putString(KEY_DIAGNOSTIC_STAGE, stage)
                 .putLong(KEY_DIAGNOSTIC_TIME, System.currentTimeMillis())
                 .commit();
+        appendDiagnostic(application, stage);
+    }
+
+    private static void appendDiagnostic(Context context, String text) {
+        if (context == null || text == null) {
+            return;
+        }
+        File file = new File(context.getFilesDir(), DIAGNOSTIC_LOG_FILE);
+        String timestamp = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
+                .format(new Date());
+        try (FileOutputStream output = new FileOutputStream(file, true)) {
+            output.write((timestamp + " | " + text + "\n").getBytes(StandardCharsets.UTF_8));
+            output.flush();
+            output.getFD().sync();
+        } catch (IOException ignored) {
+            Log.e(TAG, "Unable to append Mihomo diagnostic log", ignored);
+        }
+    }
+
+    private static String buildDiagnosticReport(Context context) throws IOException {
+        StringBuilder report = new StringBuilder();
+        report.append("SmartTube Proxy - Mihomo diagnostics\n");
+        report.append("Generated: ").append(new Date()).append('\n');
+        report.append("Manufacturer: ").append(Build.MANUFACTURER).append('\n');
+        report.append("Model: ").append(Build.MODEL).append('\n');
+        report.append("Device: ").append(Build.DEVICE).append('\n');
+        report.append("Android SDK: ").append(Build.VERSION.SDK_INT).append('\n');
+        report.append("Android release: ").append(Build.VERSION.RELEASE).append('\n');
+        report.append("Supported ABIs: ");
+        for (int index = 0; index < Build.SUPPORTED_ABIS.length; index++) {
+            if (index > 0) {
+                report.append(", ");
+            }
+            report.append(Build.SUPPORTED_ABIS[index]);
+        }
+        report.append('\n');
+        report.append("Native library dir: ")
+                .append(context.getApplicationInfo().nativeLibraryDir).append('\n');
+        report.append("Current state: ").append(STATE.get()).append('\n');
+        report.append("Last persisted stage: ").append(getStartupDiagnostic(context)).append('\n');
+        report.append("Last error: ").append(lastError == null ? "none" : lastError).append('\n');
+        report.append("\n--- Timeline ---\n");
+
+        File file = new File(context.getFilesDir(), DIAGNOSTIC_LOG_FILE);
+        if (file.isFile()) {
+            try (FileInputStream input = new FileInputStream(file)) {
+                byte[] buffer = new byte[16 * 1024];
+                int count;
+                while ((count = input.read(buffer)) != -1) {
+                    report.append(new String(buffer, 0, count, StandardCharsets.UTF_8));
+                }
+            }
+        } else {
+            report.append("No timeline recorded.\n");
+        }
+        return report.toString();
+    }
+
+    private static String stackTrace(Throwable error) {
+        if (error == null) {
+            return "No throwable supplied";
+        }
+        StringWriter writer = new StringWriter();
+        error.printStackTrace(new PrintWriter(writer));
+        return writer.toString();
     }
 
     private static void fail(String message, Throwable error) {
@@ -432,6 +562,9 @@ public final class MihomoCoreManager {
                 ? message : message + ": " + error.getMessage();
         STATE.set(State.FAILED);
         recordStage(appContext, "初始化失败：" + lastError);
+        if (error != null) {
+            appendDiagnostic(appContext, stackTrace(error));
+        }
         if (error == null) {
             Log.e(TAG, message);
         } else {
