@@ -25,6 +25,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import io.github.oviron.libmihomo.Clash;
 import io.github.oviron.libmihomo.InvokeInterface;
 
+import com.liskovsoft.smartyoutubetv2.tv.proxy.data.ProxyPreferences;
+
 /** Embedded Mihomo lifecycle and action bridge for the stproxy flavor. */
 public final class MihomoCoreManager {
     public enum State { STOPPED, STARTING, RUNNING, FAILED }
@@ -70,6 +72,14 @@ public final class MihomoCoreManager {
     private static volatile Context appContext;
 
     private MihomoCoreManager() {
+    }
+
+    /** Starts automatically only when the user previously enabled the proxy. */
+    public static void startIfEnabled(Context context) {
+        Context application = context.getApplicationContext();
+        if (new ProxyPreferences(application).isEnabled()) {
+            start(application);
+        }
     }
 
     public static void start(Context context) {
