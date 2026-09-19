@@ -41,6 +41,9 @@ public final class MihomoCoreManager {
     private static final String TAG = "MihomoCoreManager";
     private static final String HOME_DIRECTORY = "mihomo";
     private static final String CONFIG_FILE = "config.yaml";
+    private static final String DIAGNOSTIC_PREFS = "mihomo_startup_diagnostics";
+    private static final String KEY_DIAGNOSTIC_STAGE = "stage";
+    private static final String KEY_DIAGNOSTIC_TIME = "time";
     private static final int READY_TIMEOUT_MS = 8_000;
     private static final int CONNECT_TIMEOUT_MS = 200;
     private static final int RETRY_DELAY_MS = 100;
@@ -88,7 +91,14 @@ public final class MihomoCoreManager {
             return;
         }
         STATE.set(State.STARTING);
+        recordStage(appContext, "开始初始化");
         EXECUTOR.execute(() -> startInternal(appContext));
+    }
+
+    public static String getStartupDiagnostic(Context context) {
+        return context.getApplicationContext()
+                .getSharedPreferences(DIAGNOSTIC_PREFS, Context.MODE_PRIVATE)
+                .getString(KEY_DIAGNOSTIC_STAGE, "尚未测试");
     }
 
     public static State getState() {
@@ -145,28 +155,35 @@ public final class MihomoCoreManager {
 
     private static void startInternal(Context context) {
         try {
+            recordStage(context, "正在准备初始化配置");
             File home = new File(context.getFilesDir(), HOME_DIRECTORY);
             ensureDirectory(home);
             File config = new File(home, CONFIG_FILE);
             writeBootstrapConfigIfMissing(config);
 
+            recordStage(context, "正在加载 Mihomo native 库");
             Clash.INSTANCE.load(context.getApplicationInfo().nativeLibraryDir);
             if (!Clash.INSTANCE.isLoaded()) {
                 throw new IllegalStateException("libmihomo native libraries failed to load");
             }
+            recordStage(context, "Mihomo native 库加载成功");
 
             String initParams = "{\"home-dir\":\"" + jsonEscape(home.getAbsolutePath()) +
                     "\",\"version\":" + Build.VERSION.SDK_INT + "}";
+            recordStage(context, "正在执行 Mihomo quickSetup");
             Clash.INSTANCE.quickSetup(initParams, "{}", result -> {
+                recordStage(context, "Mihomo quickSetup 已返回");
                 if (result != null && !result.isEmpty()) {
                     fail("Mihomo setup failed: " + result, null);
                     return;
                 }
+                recordStage(context, "正在配置本地代理端口");
                 enforceLocalRuntime((ignored, error) -> {
                     if (error != null) {
                         fail("Unable to enforce local Mihomo runtime", null);
                         return;
                     }
+                    recordStage(context, "正在等待 127.0.0.1:7890");
                     EXECUTOR.execute(() -> {
                         if (awaitLoopbackProxy()) {
                             ProxyRuntimeCoordinator.onCoreReady(context);
@@ -322,6 +339,7 @@ public final class MihomoCoreManager {
                 socket.connect(new InetSocketAddress(LOOPBACK_HOST, MIXED_PORT), CONNECT_TIMEOUT_MS);
                 lastError = null;
                 STATE.set(State.RUNNING);
+                recordStage(appContext, "初始化成功：127.0.0.1:7890 已就绪");
                 Log.i(TAG, "Mihomo is ready on " + LOOPBACK_HOST + ":" + MIXED_PORT);
                 return true;
             } catch (IOException ignored) {
@@ -397,10 +415,23 @@ public final class MihomoCoreManager {
         return value == null || value.isEmpty() ? null : value;
     }
 
+    private static void recordStage(Context context, String stage) {
+        if (context == null) {
+            return;
+        }
+        context.getApplicationContext()
+                .getSharedPreferences(DIAGNOSTIC_PREFS, Context.MODE_PRIVATE)
+                .edit()
+                .putString(KEY_DIAGNOSTIC_STAGE, stage)
+                .putLong(KEY_DIAGNOSTIC_TIME, System.currentTimeMillis())
+                .commit();
+    }
+
     private static void fail(String message, Throwable error) {
         lastError = error == null || error.getMessage() == null
                 ? message : message + ": " + error.getMessage();
         STATE.set(State.FAILED);
+        recordStage(appContext, "初始化失败：" + lastError);
         if (error == null) {
             Log.e(TAG, message);
         } else {
