@@ -17,7 +17,11 @@ network clients through the local proxy; that is Phase 3/4 work.
   not build an x86/x86_64 TV APK in this phase.
 
 The AAR is not committed to Git. `scripts/fetch-libmihomo.sh` downloads the
-exact release and refuses to install it unless its SHA-256 matches.
+exact release and refuses to install it unless its SHA-256 matches. SmartTube's
+current D8 cannot consume the AAR's newer Kotlin facade, so the script extracts
+only the verified native libraries. A flavor-local Java 8 facade preserves the
+same JNI class names, method names, and bridge ABI without changing SmartTube's
+Gradle/AGP baseline.
 
 ## Runtime path
 
@@ -52,7 +56,32 @@ system-wide proxy setting.
 
 `.github/workflows/proxy-build.yml` builds `assembleStproxyDebug`, produces
 ARM64, ARMv7 and universal APK artifacts, writes SHA-256 sums, and retains every
-uploaded artifact for 7 days.
+uploaded artifact for 7 days. Superseded builds on the same branch are cancelled
+automatically.
 
-The definitive Phase 2 build result and workflow run ID are recorded after the
-GitHub Actions build completes.
+Definitive verified build:
+
+- Commit: `f14c382c5ec19c18fade3e08e318373805469df9`
+- Workflow run: `35451386803` (run 10)
+- `./gradlew lintStproxyDebug`: passed
+- `./gradlew clean assembleStproxyDebug`: passed
+- ARM64 artifact: `10586881720`
+- ARMv7 artifact: `10587096543`
+- Universal artifact: `10586791929`
+- Artifact expiry: 2026-09-26 (7 days after creation)
+- Universal APK SHA-256:
+  `eaf57e3025a54f731f16e6dbd383adee0d8c68332feba21953afd7f6c60d2e9a`
+
+The downloaded universal artifact was independently checked with
+`sha256sum -c`. Its APK contains both `libclash.so` and `libmihomo-jni.so` for
+ARM64 and ARMv7, plus the compiled bootstrap/manager code and the local-only
+`127.0.0.1:7890` configuration.
+
+## Remaining runtime acceptance check
+
+Compilation, lint, packaging, native payloads, and the readiness state machine
+are verified. The manager reports `RUNNING` only after an actual TCP connection
+to `127.0.0.1:7890` succeeds. Executing that Android process requires an ARM
+Android TV/device (the Phase 2 artifact intentionally does not ship an x86
+emulator ABI), so the final live-port observation is the device-only acceptance
+check before Phase 2 can be marked runtime-complete.
