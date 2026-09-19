@@ -60,6 +60,12 @@ public final class ProxySettingsPresenter {
         dialog.appendSingleButton(UiOptionItem.from("代理状态", "● " + status, item -> { }));
         dialog.appendSingleSwitch(UiOptionItem.from("使用内置代理",
                 option -> setEnabled(option.isSelected()), enabled));
+        dialog.appendSingleButton(UiOptionItem.from("Mihomo 初始化自检",
+                MihomoCoreManager.getStartupDiagnostic(context),
+                item -> runMihomoSelfTest()));
+        dialog.appendSingleButton(UiOptionItem.from("导出 Mihomo 日志",
+                "保存到手机“下载/SmartTube-Proxy”",
+                item -> exportMihomoLog()));
 
         dialog.appendSingleButton(UiOptionItem.from("当前订阅",
                 active == null ? "尚未添加订阅" : active.name,
@@ -93,6 +99,49 @@ public final class ProxySettingsPresenter {
             }
             navigateTo(this::showMain);
         }));
+    }
+
+    private void runMihomoSelfTest() {
+        MihomoCoreManager.installDiagnosticCrashHandler(context);
+        MihomoCoreManager.State state = MihomoCoreManager.getState();
+        if (state == MihomoCoreManager.State.RUNNING) {
+            MessageHelpers.showMessage(context, "Mihomo 已初始化成功");
+            navigateTo(this::showMain);
+            return;
+        }
+        if (state == MihomoCoreManager.State.FAILED) {
+            MessageHelpers.showLongMessage(context,
+                    "本次进程已经测试失败，请先导出日志；重启 App 后可再次测试");
+            navigateTo(this::showMain);
+            return;
+        }
+
+        MessageHelpers.showMessage(context, "正在执行 Mihomo 初始化自检...");
+        MihomoCoreManager.start(context);
+        pollMihomoSelfTest(System.currentTimeMillis() + 12_000);
+    }
+
+    private void pollMihomoSelfTest(long deadline) {
+        MihomoCoreManager.State state = MihomoCoreManager.getState();
+        if (state == MihomoCoreManager.State.STARTING && System.currentTimeMillis() < deadline) {
+            main.postDelayed(() -> pollMihomoSelfTest(deadline), 250);
+            return;
+        }
+
+        String stage = MihomoCoreManager.getStartupDiagnostic(context);
+        if (state == MihomoCoreManager.State.RUNNING) {
+            MessageHelpers.showLongMessage(context, "自检成功：" + stage);
+        } else {
+            MessageHelpers.showLongMessage(context,
+                    "自检未通过：" + stage + "。请点击“导出 Mihomo 日志”");
+        }
+        navigateTo(this::showMain);
+    }
+
+    private void exportMihomoLog() {
+        String result = MihomoCoreManager.exportDiagnosticLog(context);
+        MessageHelpers.showLongMessage(context,
+                result.startsWith("下载/") ? "日志已保存到：" + result : result);
     }
 
     private void reconnect() {
