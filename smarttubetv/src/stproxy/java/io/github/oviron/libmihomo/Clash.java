@@ -51,6 +51,11 @@ public final class Clash {
         nativeQuickSetup(initParams, setupParams, callback);
     }
 
+    public void invokeAction(String action, InvokeInterface callback) {
+        assertReady();
+        nativeInvokeAction(action, callback);
+    }
+
     private void assertReady() {
         if (loaded) {
             return;
@@ -67,6 +72,8 @@ public final class Clash {
     }
 
     private static native int nativeBridgeABI();
+
+    private static native void nativeInvokeAction(String action, InvokeInterface callback);
 
     private static native void nativeQuickSetup(
             String initParams,
