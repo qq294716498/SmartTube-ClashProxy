@@ -61,6 +61,7 @@ android {
         versionName "32.53"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField "long", "TIMESTAMP", System.currentTimeMillis() + "L"
+        buildConfigField "boolean", "MIHOMO_EMBEDDED", "false"
 
         // More info: http://myhexaville.com/2017/03/10/android-multidex/
         // Additionally, you should extend your application from MultiDexApplication
@@ -177,6 +178,17 @@ android {
                 abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86'
             }
         }
+        stproxy {
+            applicationId "app.smarttube.proxy"
+            minSdkVersion 21
+            targetSdkVersion project.properties.compileSdkVersion
+            buildConfigField "boolean", "MIHOMO_EMBEDDED", "true"
+
+            // libmihomo-android v0.3.3 ships these Android TV ABIs.
+            ndk {
+                abiFilters 'armeabi-v7a', 'arm64-v8a'
+            }
+        }
     }
 }
 
@@ -252,4 +264,8 @@ dependencies {
 
     // ByeByeDPI fix
     implementation 'org.conscrypt:conscrypt-android:' + conscryptVersion
+
+    // Downloaded and checksum-verified by scripts/fetch-libmihomo.sh.
+    // Keep this dependency flavor-scoped so official SmartTube variants stay unchanged.
+    stproxyImplementation files('libs/libmihomo-android-v0.3.3.aar')
 }
