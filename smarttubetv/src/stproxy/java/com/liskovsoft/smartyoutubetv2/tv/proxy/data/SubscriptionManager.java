@@ -129,7 +129,7 @@ public final class SubscriptionManager {
         if (removed == null) {
             return null;
         }
-        deleteRecursively(new File(root, removed.id));
+        deleteRecursively(profileDirectory(removed.id));
         String nextActive = wasActive && !profiles.isEmpty() ? profiles.get(0).id
                 : wasActive ? null : preferences.getActiveId();
         preferences.saveProfiles(profiles, nextActive);
@@ -169,7 +169,7 @@ public final class SubscriptionManager {
             callback.onComplete(null, "订阅不存在");
             return;
         }
-        File directory = new File(root, profile.id);
+        File directory = profileDirectory(profile.id);
         File temporary = new File(directory, "config.tmp");
         File config = new File(directory, "config.yaml");
         try {
@@ -220,7 +220,11 @@ public final class SubscriptionManager {
     }
 
     private File configFile(String id) {
-        return new File(new File(root, id), "config.yaml");
+        return new File(profileDirectory(id), "config.yaml");
+    }
+
+    private File profileDirectory(String id) {
+        return new File(root, "sub_" + id);
     }
 
     private static void download(String value, File destination) throws IOException {
