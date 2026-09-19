@@ -291,7 +291,8 @@ public final class ProxySettingsPresenter {
 
     private void runDiagnostics() {
         MessageHelpers.showMessage(context, "正在执行代理诊断...");
-        ProxyHealthChecker.check(result -> main.post(\n                () -> navigateTo(() -> showDiagnostics(result))));
+        ProxyHealthChecker.check(result -> main.post(
+                () -> navigateTo(() -> showDiagnostics(result))));
     }
 
     private void showDiagnostics(ProxyHealthChecker.Result health) {
