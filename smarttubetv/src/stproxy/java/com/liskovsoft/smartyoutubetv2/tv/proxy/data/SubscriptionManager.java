@@ -96,6 +96,14 @@ public final class SubscriptionManager {
             callback.onComplete(profile, "订阅没有可用的本地配置");
             return;
         }
+        if (!preferences.isEnabled()) {
+            synchronized (this) {
+                preferences.saveProfiles(preferences.loadProfiles(), id);
+            }
+            ProxyRuntimeCoordinator.applyDirect(context);
+            callback.onComplete(get(id), null);
+            return;
+        }
         ProxyRuntimeCoordinator.activate(context, profile, (error) -> {
             if (error == null) {
                 synchronized (this) {
@@ -126,7 +134,7 @@ public final class SubscriptionManager {
                 : wasActive ? null : preferences.getActiveId();
         preferences.saveProfiles(profiles, nextActive);
         if (wasActive) {
-            if (nextActive == null) {
+            if (nextActive == null || !preferences.isEnabled()) {
                 ProxyRuntimeCoordinator.applyDirect(context);
             } else {
                 SubscriptionProfile next = get(nextActive);
