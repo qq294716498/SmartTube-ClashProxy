@@ -28,7 +28,7 @@ public final class MihomoBootstrap {
 
         try {
             Class<?> manager = Class.forName(MANAGER_CLASS);
-            Method start = manager.getMethod("start", Context.class);
+            Method start = manager.getMethod("startIfEnabled", Context.class);
             start.invoke(null, context.getApplicationContext());
         } catch (Throwable error) {
             // Proxy startup must never crash SmartTube. The diagnostics UI will
