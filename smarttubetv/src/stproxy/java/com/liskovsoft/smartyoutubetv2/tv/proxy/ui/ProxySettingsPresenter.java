@@ -76,15 +76,13 @@ public final class ProxySettingsPresenter {
     }
 
     /**
-     * Android 16 may terminate the singleInstance dialog activity when the
-     * same activity is started again directly from its current key event.
-     * Close the current TV dialog first, then open the next page after its
-     * window has detached. This keeps D-pad navigation deterministic on both
-     * phones used for testing and Android TV devices.
+     * Replace the contents of the currently visible TV dialog after the
+     * current key/click dispatch has completed. Closing the dialog host before
+     * opening the next page exposes the underlying settings activity and can
+     * leave a non-interactive dialog window on Android 16.
      */
     private void navigateTo(Runnable page) {
-        AppDialogPresenter.instance(context).closeDialog();
-        main.postDelayed(page, 250);
+        main.post(page);
     }
 
     private void setEnabled(boolean enabled) {
