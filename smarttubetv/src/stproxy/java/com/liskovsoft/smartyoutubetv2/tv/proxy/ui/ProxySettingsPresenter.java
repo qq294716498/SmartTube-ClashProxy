@@ -230,6 +230,10 @@ public final class ProxySettingsPresenter {
             MessageHelpers.showMessage(context, profile == null ? "尚未添加订阅" : "请先切换到此订阅");
             return;
         }
+        if (!preferences.isEnabled()) {
+            MessageHelpers.showMessage(context, "请先开启内置代理");
+            return;
+        }
         MessageHelpers.showMessage(context, "正在读取节点...");
         nodes.query(profile, (group, list, error) -> main.post(() -> {
             if (error != null) {
