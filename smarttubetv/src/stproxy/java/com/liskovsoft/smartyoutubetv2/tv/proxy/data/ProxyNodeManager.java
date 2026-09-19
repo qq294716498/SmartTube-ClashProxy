@@ -10,7 +10,6 @@ import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -172,7 +171,8 @@ public final class ProxyNodeManager {
                 }
             }
         }
-        nodes.sort(Comparator.comparing(node -> node.name, String.CASE_INSENSITIVE_ORDER));
+        Collections.sort(nodes, (left, right) ->
+                String.CASE_INSENSITIVE_ORDER.compare(left.name, right.name));
         if (automatic != null) {
             nodes.add(0, automatic);
         }
