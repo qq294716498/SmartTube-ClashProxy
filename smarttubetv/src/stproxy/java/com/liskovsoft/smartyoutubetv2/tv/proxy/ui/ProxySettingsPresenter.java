@@ -17,6 +17,7 @@ import com.liskovsoft.smartyoutubetv2.common.app.models.playback.ui.UiOptionItem
 import com.liskovsoft.smartyoutubetv2.common.app.presenters.AppDialogPresenter;
 import com.liskovsoft.smartyoutubetv2.tv.proxy.MihomoCoreManager;
 import com.liskovsoft.smartyoutubetv2.tv.proxy.ProxyRuntimeCoordinator;
+import com.liskovsoft.smartyoutubetv2.tv.proxy.data.ProxyHealthChecker;
 import com.liskovsoft.smartyoutubetv2.tv.proxy.data.ProxyNodeManager;
 import com.liskovsoft.smartyoutubetv2.tv.proxy.data.ProxyPreferences;
 import com.liskovsoft.smartyoutubetv2.tv.proxy.data.SubscriptionManager;
@@ -69,7 +70,7 @@ public final class ProxySettingsPresenter {
         dialog.appendSingleButton(UiOptionItem.from("订阅管理",
                 subscriptions.list().size() + " 个订阅", item -> showSubscriptions()));
         dialog.appendSingleButton(UiOptionItem.from("重新连接", item -> reconnect()));
-        dialog.appendSingleButton(UiOptionItem.from("代理诊断", item -> showDiagnostics()));
+        dialog.appendSingleButton(UiOptionItem.from("代理诊断", item -> runDiagnostics()));
         dialog.showDialog("网络代理");
     }
 
@@ -271,7 +272,12 @@ public final class ProxySettingsPresenter {
         dialog.showDialog("节点选择");
     }
 
-    private void showDiagnostics() {
+    private void runDiagnostics() {
+        MessageHelpers.showMessage(context, "正在执行代理诊断...");
+        ProxyHealthChecker.check(result -> main.post(() -> showDiagnostics(result)));
+    }
+
+    private void showDiagnostics(ProxyHealthChecker.Result health) {
         SubscriptionProfile active = subscriptions.getActive();
         AppDialogPresenter dialog = AppDialogPresenter.instance(context);
         String core = MihomoCoreManager.getState().name();
@@ -284,8 +290,15 @@ public final class ProxySettingsPresenter {
                         ? "Loaded" : "Failed", item -> { }));
         dialog.appendSingleButton(UiOptionItem.from("Selected Node",
                 active == null || active.selectedNode == null ? "None" : active.selectedNode, item -> { }));
-        dialog.appendSingleButton(UiOptionItem.from("订阅地址", active == null ? "None" : maskUrl(active.url), item -> { }));
+        dialog.appendSingleButton(UiOptionItem.from("Local Proxy Check", status(health.localProxy), item -> { }));
+        dialog.appendSingleButton(UiOptionItem.from("YouTube", status(health.youtube), item -> { }));
+        dialog.appendSingleButton(UiOptionItem.from("GoogleVideo", status(health.googleVideo), item -> { }));
+        dialog.appendSingleButton(UiOptionItem.from("DNS", status(health.dns), item -> { }));
         dialog.showDialog("代理诊断");
+    }
+
+    private static String status(boolean success) {
+        return success ? "OK" : "Failed";
     }
 
     private static String delayText(int delay) {
