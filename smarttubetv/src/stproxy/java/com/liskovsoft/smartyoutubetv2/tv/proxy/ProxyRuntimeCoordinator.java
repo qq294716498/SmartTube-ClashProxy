@@ -45,18 +45,20 @@ public final class ProxyRuntimeCoordinator {
     public static void setEnabled(Context context, boolean enabled, Callback callback) {
         Context app = context.getApplicationContext();
         ProxyPreferences preferences = new ProxyPreferences(app);
-        preferences.setEnabled(enabled);
         if (!enabled) {
+            preferences.setEnabled(false);
             applyDirect(app);
             callback.onComplete(null);
             return;
         }
         SubscriptionProfile active = new SubscriptionManager(app).getActive();
         if (active == null || active.configPath == null || !new File(active.configPath).isFile()) {
+            preferences.setEnabled(false);
             applyDirect(app);
-            callback.onComplete("尚未添加可用订阅");
+            callback.onComplete("请先添加并更新一个可用订阅");
             return;
         }
+        preferences.setEnabled(true);
         activate(app, active, callback);
     }
 
