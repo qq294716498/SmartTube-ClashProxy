@@ -32,6 +32,7 @@ import com.liskovsoft.smartyoutubetv2.tv.ui.playback.PlaybackActivity;
 import com.liskovsoft.smartyoutubetv2.tv.ui.search.tags.SearchTagsActivity;
 import com.liskovsoft.smartyoutubetv2.tv.ui.signin.SignInActivity;
 import com.liskovsoft.smartyoutubetv2.tv.ui.webbrowser.WebBrowserActivity;
+import com.liskovsoft.smartyoutubetv2.tv.proxy.MihomoBootstrap;
 
 import org.conscrypt.Conscrypt;
 
@@ -55,6 +56,10 @@ public class MainApplication extends MultiDexApplication { // fix: Didn't find c
     @Override
     public void onCreate() {
         super.onCreate();
+
+        // No-op in official flavors. The proxy flavor starts the embedded core
+        // early so its loopback listener can be ready before network clients.
+        MihomoBootstrap.start(this);
 
         // ByeByeDPI fix
         // https://android-review.googlesource.com/c/platform/external/conscrypt/+/89408/
