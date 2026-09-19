@@ -45,5 +45,17 @@ success and an error string otherwise.
 
 ## Build verification
 
-The definitive GitHub Actions run, APK artifacts, and commit are recorded after
-the Phase 3 build completes.
+- GitHub Actions: `Build SmartTube Proxy` run 30 completed successfully.
+- Run: https://github.com/qq294716498/SmartTube-Proxy/actions/runs/35454505056
+- Verified commit: `bf2eab2204323b3a2434b74f55cc2200115f6635`
+- Both `lintStproxyDebug` and clean `assembleStproxyDebug` completed successfully.
+- ARM64, ARMv7, and Universal APK artifacts were uploaded with seven-day
+  retention and expire on 2026-09-26.
+- Universal APK SHA-256:
+  `0bf1595bd9fe0f35a2ba71e55ce11923eac34a94fd3b20ca16d8e28a18fcec05`
+- The Universal APK contains both ARM64 and ARMv7 `libclash.so` and
+  `libmihomo-jni.so` binaries.
+
+Runtime subscription download, provider compatibility, node switching, delay
+results, and D-pad behavior still require an ARM Android TV/device because CI
+does not provide a Mihomo-capable TV runtime.
