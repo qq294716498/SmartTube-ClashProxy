@@ -152,10 +152,16 @@ public final class MihomoCoreManager {
                     fail("Mihomo setup failed: " + result, null);
                     return;
                 }
-                EXECUTOR.execute(() -> {
-                    if (awaitLoopbackProxy()) {
-                        ProxyRuntimeCoordinator.onCoreReady(context);
+                enforceLocalRuntime((ignored, error) -> {
+                    if (error != null) {
+                        fail("Unable to enforce local Mihomo runtime", null);
+                        return;
                     }
+                    EXECUTOR.execute(() -> {
+                        if (awaitLoopbackProxy()) {
+                            ProxyRuntimeCoordinator.onCoreReady(context);
+                        }
+                    });
                 });
             });
         } catch (Throwable error) {
@@ -225,9 +231,7 @@ public final class MihomoCoreManager {
                     callback.onResult(null, setupError);
                     return;
                 }
-                invoke("updateConfig",
-                        "{\"mixed-port\":7890,\"allow-lan\":false," +
-                                "\"mode\":\"global\",\"tun\":{\"enable\":false}}",
+                enforceLocalRuntime(
                         (updateData, updateError) -> EXECUTOR.execute(() -> {
                             String finalError = updateError != null ? updateError : emptyToNull(updateData);
                             if (finalError == null && awaitLoopbackProxy()) {
@@ -240,6 +244,13 @@ public final class MihomoCoreManager {
         } catch (JSONException error) {
             callback.onResult(null, error.getMessage());
         }
+    }
+
+    private static void enforceLocalRuntime(ResultCallback callback) {
+        invoke("updateConfig",
+                "{\"mixed-port\":7890,\"allow-lan\":false," +
+                        "\"mode\":\"global\",\"tun\":{\"enable\":false}}",
+                callback);
     }
 
     private static void rollback(File previous, File target, ResultCallback callback,
