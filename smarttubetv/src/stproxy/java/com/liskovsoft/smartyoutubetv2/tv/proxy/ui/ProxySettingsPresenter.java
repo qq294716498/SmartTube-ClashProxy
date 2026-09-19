@@ -93,7 +93,7 @@ public final class ProxySettingsPresenter {
             if (error != null) {
                 MessageHelpers.showLongMessage(context, error);
             }
-            showMain();
+            navigateTo(this::showMain);
         }));
     }
 
@@ -107,7 +107,7 @@ public final class ProxySettingsPresenter {
         MessageHelpers.showMessage(context, "正在重新连接...");
         subscriptions.activate(active.id, (profile, error) -> main.post(() -> {
             MessageHelpers.showMessage(context, error == null ? "重新连接成功" : "重新连接失败");
-            showMain();
+            navigateTo(this::showMain);
         }));
     }
 
@@ -121,7 +121,7 @@ public final class ProxySettingsPresenter {
                     : "更新失败 · 正在使用本地缓存";
             String description = update + " · " + profile.nodeCount + " 个节点";
             dialog.appendSingleButton(UiOptionItem.from(marker + profile.name, description,
-                    item -> showSubscriptionDetails(profile.id)));
+                    item -> navigateTo(() -> showSubscriptionDetails(profile.id))));
         }
         dialog.appendSingleButton(UiOptionItem.from("+ 添加订阅", item -> showSubscriptionForm(null)));
         dialog.showDialog("订阅管理");
@@ -130,7 +130,7 @@ public final class ProxySettingsPresenter {
     private void showSubscriptionDetails(String id) {
         SubscriptionProfile profile = subscriptions.get(id);
         if (profile == null) {
-            showSubscriptions();
+            navigateTo(this::showSubscriptions);
             return;
         }
         AppDialogPresenter dialog = AppDialogPresenter.instance(context);
@@ -156,7 +156,7 @@ public final class ProxySettingsPresenter {
         MessageHelpers.showMessage(context, "正在切换...");
         subscriptions.activate(profile.id, (updated, error) -> main.post(() -> {
             MessageHelpers.showMessage(context, error == null ? "订阅切换成功" : "订阅切换失败");
-            showSubscriptionDetails(profile.id);
+            navigateTo(() -> showSubscriptionDetails(profile.id));
         }));
     }
 
@@ -170,7 +170,7 @@ public final class ProxySettingsPresenter {
             } else {
                 MessageHelpers.showLongMessage(context, "订阅不可用");
             }
-            showSubscriptionDetails(profile.id);
+            navigateTo(() -> showSubscriptionDetails(profile.id));
         }));
     }
 
@@ -217,7 +217,7 @@ public final class ProxySettingsPresenter {
                 if (saved != null && urlChanged) {
                     update(saved);
                 } else if (saved != null) {
-                    showSubscriptionDetails(saved.id);
+                    navigateTo(() -> showSubscriptionDetails(saved.id));
                 }
             });
         });
@@ -233,7 +233,7 @@ public final class ProxySettingsPresenter {
                 .setPositiveButton("删除", (dialog, which) -> {
                     subscriptions.delete(profile.id);
                     MessageHelpers.showMessage(context, "订阅已删除");
-                    showSubscriptions();
+                    navigateTo(this::showSubscriptions);
                 })
                 .show();
     }
@@ -253,7 +253,7 @@ public final class ProxySettingsPresenter {
                 MessageHelpers.showLongMessage(context, "节点读取失败");
                 return;
             }
-            showNodeList(profile, group, list);
+            navigateTo(() -> showNodeList(profile, group, list));
         }));
     }
 
@@ -291,7 +291,7 @@ public final class ProxySettingsPresenter {
 
     private void runDiagnostics() {
         MessageHelpers.showMessage(context, "正在执行代理诊断...");
-        ProxyHealthChecker.check(result -> main.post(() -> showDiagnostics(result)));
+        ProxyHealthChecker.check(result -> main.post(\n                () -> navigateTo(() -> showDiagnostics(result))));
     }
 
     private void showDiagnostics(ProxyHealthChecker.Result health) {
