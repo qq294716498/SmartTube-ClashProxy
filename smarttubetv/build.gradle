@@ -183,6 +183,7 @@ android {
             minSdkVersion 21
             targetSdkVersion project.properties.compileSdkVersion
             buildConfigField "boolean", "MIHOMO_EMBEDDED", "true"
+            matchingFallbacks = ['stbeta']
 
             // libmihomo-android v0.3.3 ships these Android TV ABIs.
             ndk {
