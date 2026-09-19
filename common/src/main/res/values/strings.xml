@@ -367,6 +367,7 @@
     <string name="proxy_password_hint">Proxy password</string>
     <string name="proxy_type">Proxy Type</string>
     <string name="enable_web_proxy">Use Web Proxy</string>
+    <string name="settings_network_proxy">Network Proxy</string>
     <string name="proxy_not_supported">Use Web Proxy (Needs Android 4.4+)</string>
     <string name="proxy_test_btn">Test</string>
     <string name="proxy_settings_title">Proxy Server Settings</string>
