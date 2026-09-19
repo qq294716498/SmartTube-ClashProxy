@@ -63,15 +63,28 @@ public final class ProxySettingsPresenter {
 
         dialog.appendSingleButton(UiOptionItem.from("当前订阅",
                 active == null ? "尚未添加订阅" : active.name,
-                item -> showSubscriptions()));
+                item -> navigateTo(this::showSubscriptions)));
         dialog.appendSingleButton(UiOptionItem.from("当前节点",
                 active == null || active.selectedNode == null ? "未选择" : active.selectedNode,
                 item -> showNodes(active)));
         dialog.appendSingleButton(UiOptionItem.from("订阅管理",
-                subscriptions.list().size() + " 个订阅", item -> showSubscriptions()));
+                subscriptions.list().size() + " 个订阅",
+                item -> navigateTo(this::showSubscriptions)));
         dialog.appendSingleButton(UiOptionItem.from("重新连接", item -> reconnect()));
         dialog.appendSingleButton(UiOptionItem.from("代理诊断", item -> runDiagnostics()));
         dialog.showDialog("网络代理");
+    }
+
+    /**
+     * Android 16 may terminate the singleInstance dialog activity when the
+     * same activity is started again directly from its current key event.
+     * Close the current TV dialog first, then open the next page after its
+     * window has detached. This keeps D-pad navigation deterministic on both
+     * phones used for testing and Android TV devices.
+     */
+    private void navigateTo(Runnable page) {
+        AppDialogPresenter.instance(context).closeDialog();
+        main.postDelayed(page, 250);
     }
 
     private void setEnabled(boolean enabled) {
