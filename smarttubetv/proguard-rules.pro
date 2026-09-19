@@ -36,3 +36,10 @@
 -dontwarn org.slf4j.**
 
 # End Enable minification
+-keep class io.github.oviron.libmihomo.Clash { *; }
+-keep class io.github.oviron.libmihomo.Clash$Companion { *; }
+-keep interface io.github.oviron.libmihomo.InvokeInterface { *; }
+-keep interface io.github.oviron.libmihomo.TunInterface { *; }
+-keepclasseswithmembernames class io.github.oviron.libmihomo.** {
+    native <methods>;
+}
