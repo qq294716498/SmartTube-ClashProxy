@@ -57,10 +57,6 @@ public class MainApplication extends MultiDexApplication { // fix: Didn't find c
     public void onCreate() {
         super.onCreate();
 
-        // No-op in official flavors. The proxy flavor starts the embedded core
-        // early so its loopback listener can be ready before network clients.
-        MihomoBootstrap.start(this);
-
         // ByeByeDPI fix
         // https://android-review.googlesource.com/c/platform/external/conscrypt/+/89408/
         // NOTE: Android 10+ (API 29+) uses system Conscrypt TLS; custom Security providers are unnecessary
@@ -88,6 +84,14 @@ public class MainApplication extends MultiDexApplication { // fix: Didn't find c
 
         setupGlobalExceptionHandler();
         setupViewManager();
+
+        // Load other native components only after Conscrypt has completed its
+        // one-time provider initialization. SmartTube deliberately performs
+        // that initialization before config/preferences and JNI activity;
+        // starting Mihomo above it can cause native linker failures on some
+        // Android phones and TV firmware. The proxy core still starts before
+        // SplashActivity begins network work.
+        MihomoBootstrap.start(this);
     }
 
     private void setupViewManager() {
