@@ -5,6 +5,7 @@ import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
+import android.text.TextUtils;
 import android.util.AttributeSet;
 import android.view.View;
 import android.widget.TextView;
@@ -56,6 +57,7 @@ public class NavigateTitleView extends TitleView implements OnDataChange, Accoun
     private LongClickSearchOrbView mAccountView;
     private SearchOrbView mLanguageView;
     private SearchOrbView mProxyView;
+    private TextView mProxyTitle;
     private SearchOrbView mExitPip;
     private TextView mPipTitle;
     private int mSearchVisibility = View.INVISIBLE;
@@ -165,6 +167,8 @@ public class NavigateTitleView extends TitleView implements OnDataChange, Accoun
 
         if (mIsProxyViewEnabled) {
             mProxyView.setVisibility(mSearchVisibility);
+            mProxyTitle.setVisibility(mSearchVisibility == View.VISIBLE &&
+                    !TextUtils.isEmpty(mProxyTitle.getText()) ? View.VISIBLE : View.GONE);
         }
 
         if (mExitPip != null && (PlaybackPresenter.instance(getContext()).isRunningInBackground() || mSearchVisibility != View.VISIBLE)) {
@@ -211,7 +215,14 @@ public class NavigateTitleView extends TitleView implements OnDataChange, Accoun
 
         mProxyView = findViewById(R.id.proxy_orb);
         mProxyView.setOnOrbClickedListener(v -> EmbeddedProxySettingsBridge.show(getContext()));
+        Colors proxyColors = mProxyView.getOrbColors();
+        mProxyView.setOrbColors(new Colors(proxyColors.color, proxyColors.brightColor, Color.TRANSPARENT));
+        mProxyView.setOrbIcon(ContextCompat.getDrawable(getContext(), R.drawable.browse_title_proxy));
         TooltipCompatHandler.setTooltipText(mProxyView, getContext().getString(R.string.settings_network_proxy));
+
+        mProxyTitle = findViewById(R.id.proxy_title);
+        ViewUtil.enableMarquee(mProxyTitle);
+        ViewUtil.setTextScrollSpeed(mProxyTitle, mainUIData.getCardTextScrollSpeed());
 
         mLanguageView = findViewById(R.id.language_orb);
         mLanguageView.setOnOrbClickedListener(v -> LanguageSettingsPresenter.instance(getContext()).show());
@@ -247,6 +258,8 @@ public class NavigateTitleView extends TitleView implements OnDataChange, Accoun
         mAccountView.setVisibility(mIsAccountViewEnabled ? View.VISIBLE : View.GONE);
         mLanguageView.setVisibility(mIsLanguageViewEnabled ? View.VISIBLE : View.GONE);
         mProxyView.setVisibility(mIsProxyViewEnabled ? View.VISIBLE : View.GONE);
+        mProxyTitle.setVisibility(View.GONE);
+        updateProxyStatus();
         mGlobalClock.setVisibility(mIsGlobalClockEnabled ? View.VISIBLE : View.GONE);
         mGlobalDate.setVisibility(mIsGlobalClockEnabled ? View.VISIBLE : View.GONE);
 
@@ -270,6 +283,7 @@ public class NavigateTitleView extends TitleView implements OnDataChange, Accoun
 
         if (hasWindowFocus) { // pip window closed, dialog closed
             applyPipParameters();
+            updateProxyStatus();
         }
     }
 
@@ -309,6 +323,21 @@ public class NavigateTitleView extends TitleView implements OnDataChange, Accoun
             mAccountView.setOrbIcon(ContextCompat.getDrawable(getContext(), R.drawable.browse_title_account));
             TooltipCompatHandler.setTooltipText(mAccountView, getContext().getString(R.string.dialog_account_none));
         }
+    }
+
+    private void updateProxyStatus() {
+        if (!mIsProxyViewEnabled || mProxyTitle == null) {
+            return;
+        }
+
+        String nodeName = EmbeddedProxySettingsBridge.getHomeLabel(getContext());
+        mProxyTitle.setText(nodeName == null ? "" : nodeName);
+        mProxyTitle.setVisibility(mSearchVisibility == View.VISIBLE &&
+                !TextUtils.isEmpty(nodeName) ? View.VISIBLE : View.GONE);
+        TooltipCompatHandler.setTooltipText(mProxyView,
+                TextUtils.isEmpty(nodeName)
+                        ? getContext().getString(R.string.settings_network_proxy)
+                        : nodeName);
     }
 
     private void updateLanguageIcon() {

@@ -266,4 +266,6 @@ dependencies {
     // ByeByeDPI fix
     implementation 'org.conscrypt:conscrypt-android:' + conscryptVersion
 
+    // QR code shown by the SmartTube Proxy phone-management page.
+    stproxyImplementation 'com.google.zxing:core:3.5.3'
 }

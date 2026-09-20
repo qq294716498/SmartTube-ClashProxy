@@ -1,5 +1,6 @@
 package com.liskovsoft.smartyoutubetv2.tv.proxy.ui;
 
+import android.app.AlertDialog;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.os.Handler;
@@ -9,7 +10,6 @@ import android.view.ViewGroup;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 
-import androidx.appcompat.app.AlertDialog;
 
 import com.liskovsoft.sharedutils.helpers.MessageHelpers;
 import com.liskovsoft.smartyoutubetv2.common.app.models.playback.ui.OptionItem;
@@ -23,6 +23,7 @@ import com.liskovsoft.smartyoutubetv2.tv.proxy.data.ProxyPreferences;
 import com.liskovsoft.smartyoutubetv2.tv.proxy.data.SubscriptionManager;
 import com.liskovsoft.smartyoutubetv2.tv.proxy.model.ProxyNode;
 import com.liskovsoft.smartyoutubetv2.tv.proxy.model.SubscriptionProfile;
+import com.liskovsoft.smartyoutubetv2.tv.proxy.remote.ProxyRemoteManager;
 
 import java.net.MalformedURLException;
 import java.net.URL;
@@ -50,6 +51,15 @@ public final class ProxySettingsPresenter {
         new ProxySettingsPresenter(context).showMain();
     }
 
+    /** Label displayed beside the Clash button on the home screen. */
+    public static String getHomeLabel(Context context) {
+        SubscriptionProfile active = new SubscriptionManager(context).getActive();
+        if (active == null || active.selectedNode == null || active.selectedNode.trim().isEmpty()) {
+            return null;
+        }
+        return active.selectedNode;
+    }
+
     private void showMain() {
         AppDialogPresenter dialog = AppDialogPresenter.instance(context);
         SubscriptionProfile active = subscriptions.getActive();
@@ -66,6 +76,9 @@ public final class ProxySettingsPresenter {
         dialog.appendSingleButton(UiOptionItem.from("导出 Mihomo 日志",
                 "保存到手机“下载/SmartTube-Proxy”",
                 item -> exportMihomoLog()));
+        dialog.appendSingleButton(UiOptionItem.from("手机扫码管理",
+                "用手机添加订阅、删除订阅和选择节点",
+                item -> ProxyRemoteManager.show(context)));
 
         dialog.appendSingleButton(UiOptionItem.from("当前订阅",
                 active == null ? "尚未添加订阅" : active.name,

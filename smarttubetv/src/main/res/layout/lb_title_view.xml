@@ -64,6 +64,18 @@
             app:searchOrbIconColor="@color/orb_icon_color"
             android:visibility="gone" />
 
+        <com.liskovsoft.smartyoutubetv2.tv.ui.widgets.marqueetextviewcompat.TitleMarqueeTextViewCompat
+            android:id="@+id/proxy_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/search_bar_right_items_margin"
+            android:layout_gravity="center_vertical"
+            android:maxWidth="@dimen/pip_title_max_width"
+            android:textSize="@dimen/pip_title_size"
+            style="?attr/browseTitleTextStyle"
+            android:ellipsize="marquee"
+            android:visibility="gone" />
+
         <androidx.leanback.widget.SearchOrbView
             android:id="@+id/language_orb"
             android:layout_width="wrap_content"

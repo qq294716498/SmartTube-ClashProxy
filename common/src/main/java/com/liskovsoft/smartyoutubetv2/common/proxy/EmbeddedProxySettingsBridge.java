@@ -30,4 +30,15 @@ public final class EmbeddedProxySettingsBridge {
             // Official flavors intentionally do not contain the implementation.
         }
     }
+
+    public static String getHomeLabel(Context context) {
+        try {
+            Class<?> presenter = Class.forName(PRESENTER);
+            Method method = presenter.getMethod("getHomeLabel", Context.class);
+            Object result = method.invoke(null, context);
+            return result instanceof String ? (String) result : null;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
 }
