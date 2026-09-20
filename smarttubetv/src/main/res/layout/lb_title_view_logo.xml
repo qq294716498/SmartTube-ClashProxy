@@ -3,6 +3,7 @@
 <!-- Title Logo with embedded clock -->
 
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              xmlns:app="http://schemas.android.com/apk/res-auto"
               android:layout_width="wrap_content"
               android:layout_height="wrap_content"
               android:layout_gravity="center_vertical|end"
@@ -41,9 +42,36 @@
             android:visibility="gone" />
     </LinearLayout>
 
+    <com.liskovsoft.smartyoutubetv2.tv.ui.widgets.marqueetextviewcompat.TitleMarqueeTextViewCompat
+        android:id="@+id/proxy_title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/search_bar_right_items_margin"
+        android:layout_gravity="center_vertical"
+        android:maxWidth="@dimen/pip_title_max_width"
+        android:textSize="@dimen/pip_title_size"
+        style="?attr/browseTitleTextStyle"
+        android:ellipsize="marquee"
+        android:visibility="gone" />
+
+    <androidx.leanback.widget.SearchOrbView
+        android:id="@+id/proxy_brand_orb"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/search_bar_right_items_margin"
+        android:layout_gravity="center_vertical"
+        android:nextFocusLeft="@id/account_orb"
+        app:searchOrbIcon="@drawable/browse_title_proxy"
+        app:searchOrbColor="@color/orb_color"
+        app:searchOrbBrightColor="@color/orb_bright_color"
+        app:searchOrbIconColor="@android:color/transparent"
+        android:visibility="gone" />
+
+    <!-- Keep Leanback's required title views, but suppress the old app branding. -->
     <FrameLayout android:layout_width="wrap_content"
                  android:layout_height="wrap_content"
-                 android:layout_gravity="center_vertical">
+                 android:layout_gravity="center_vertical"
+                 android:visibility="gone">
         <ImageView
             android:id="@+id/title_badge"
             android:layout_width="wrap_content"

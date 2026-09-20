@@ -167,8 +167,8 @@ public class NavigateTitleView extends TitleView implements OnDataChange, Accoun
         }
 
         if (mIsProxyViewEnabled) {
-            mProxyView.setVisibility(mSearchVisibility);
-            mProxyTitle.setVisibility(mSearchVisibility == View.VISIBLE &&
+            mProxyView.setVisibility(mBrandingVisibility);
+            mProxyTitle.setVisibility(mBrandingVisibility == View.VISIBLE &&
                     !TextUtils.isEmpty(mProxyTitle.getText()) ? View.VISIBLE : View.GONE);
         }
 
@@ -214,7 +214,7 @@ public class NavigateTitleView extends TitleView implements OnDataChange, Accoun
         });
         TooltipCompatHandler.setTooltipText(mAccountView, getContext().getString(R.string.settings_accounts));
 
-        mProxyView = findViewById(R.id.proxy_orb);
+        mProxyView = findViewById(R.id.proxy_brand_orb);
         mProxyView.setOnOrbClickedListener(v -> EmbeddedProxySettingsBridge.show(getContext()));
         Colors proxyColors = mProxyView.getOrbColors();
         mProxyView.setOrbColors(new Colors(proxyColors.color, proxyColors.brightColor, Color.TRANSPARENT));
@@ -367,7 +367,7 @@ public class NavigateTitleView extends TitleView implements OnDataChange, Accoun
 
         String visibleName = running ? nodeName : null;
         mProxyTitle.setText(visibleName == null ? "" : visibleName);
-        mProxyTitle.setVisibility(mSearchVisibility == View.VISIBLE &&
+        mProxyTitle.setVisibility(mBrandingVisibility == View.VISIBLE &&
                 !TextUtils.isEmpty(visibleName) ? View.VISIBLE : View.GONE);
 
         String status = running ? "已连接" : state == 1 ? "正在连接" :
