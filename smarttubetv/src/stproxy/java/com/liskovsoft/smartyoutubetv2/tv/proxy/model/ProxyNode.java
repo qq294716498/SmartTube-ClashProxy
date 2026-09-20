@@ -9,8 +9,8 @@ public final class ProxyNode {
     public final String runtimeName;
     public final String type;
     public final boolean automatic;
-    public boolean selected;
-    public int delayMs;
+    public volatile boolean selected;
+    public volatile int delayMs;
 
     public ProxyNode(String name, String runtimeName, String type, boolean automatic) {
         this.name = name;

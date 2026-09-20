@@ -268,4 +268,5 @@ dependencies {
 
     // QR code shown by the SmartTube Proxy phone-management page.
     stproxyImplementation 'com.google.zxing:core:3.5.3'
+    stproxyImplementation 'org.yaml:snakeyaml:2.2'
 }

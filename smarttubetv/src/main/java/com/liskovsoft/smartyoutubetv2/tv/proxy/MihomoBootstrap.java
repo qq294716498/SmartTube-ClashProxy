@@ -5,6 +5,7 @@ import android.util.Log;
 
 import com.liskovsoft.sharedutils.locale.LocaleUpdater;
 import com.liskovsoft.smartyoutubetv2.tv.BuildConfig;
+import com.liskovsoft.smartyoutubetv2.common.proxy.EmbeddedProxyRoute;
 
 import java.lang.reflect.Method;
 
@@ -26,6 +27,7 @@ public final class MihomoBootstrap {
         if (!BuildConfig.MIHOMO_EMBEDDED) {
             return;
         }
+        EmbeddedProxyRoute.install(context.getApplicationContext());
 
         // 优兔喵视频是自用简体中文版。只固定 stproxy 风味，
         // 不改变上游普通版和测试版的多语言行为。
