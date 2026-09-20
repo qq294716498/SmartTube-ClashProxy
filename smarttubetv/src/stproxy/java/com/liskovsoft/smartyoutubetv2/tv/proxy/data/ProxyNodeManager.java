@@ -1,6 +1,10 @@
 package com.liskovsoft.smartyoutubetv2.tv.proxy.data;
 
 import com.liskovsoft.smartyoutubetv2.tv.proxy.MihomoCoreManager;
+import com.liskovsoft.smartyoutubetv2.tv.proxy.ProxyRuntimeCoordinator;
+import com.liskovsoft.smartyoutubetv2.common.proxy.EmbeddedProxyRoute;
+import android.os.Handler;
+import android.os.Looper;
 import com.liskovsoft.smartyoutubetv2.tv.proxy.model.ProxyNode;
 import com.liskovsoft.smartyoutubetv2.tv.proxy.model.SubscriptionProfile;
 
@@ -20,6 +24,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class ProxyNodeManager {
     public interface NodesCallback {
@@ -40,6 +45,14 @@ public final class ProxyNodeManager {
     private static final long CACHE_MS = 5 * 60 * 1_000L;
     private static final Set<String> INTERNAL = new HashSet<>();
     private static final Map<String, DelayEntry> DELAYS = new ConcurrentHashMap<>();
+    private static final AtomicBoolean SWITCHING = new AtomicBoolean();
+    private static final Handler MAIN = new Handler(Looper.getMainLooper());
+    public static boolean isSwitching() { return SWITCHING.get(); }
+    public static final class TestSession {
+        private final AtomicBoolean cancelled = new AtomicBoolean();
+        public void cancel() { cancelled.set(true); }
+        public boolean isCancelled() { return cancelled.get(); }
+    }
     private static final ExecutorService DELAY_EXECUTOR = Executors.newFixedThreadPool(5, runnable -> {
         Thread thread = new Thread(runnable, "smarttube-proxy-delay");
         thread.setDaemon(true);
@@ -47,7 +60,7 @@ public final class ProxyNodeManager {
     });
 
     static {
-        Collections.addAll(INTERNAL, "DIRECT", "REJECT", "PASS", "COMPATIBLE");
+        Collections.addAll(INTERNAL, "DIRECT", "REJECT", "REJECT-DROP", "PASS", "COMPATIBLE");
     }
 
     private final SubscriptionManager subscriptions;
@@ -73,33 +86,59 @@ public final class ProxyNodeManager {
 
     public void switchNode(SubscriptionProfile profile, String group, ProxyNode node,
                            int nodeCount, SwitchCallback callback) {
-        MihomoCoreManager.changeProxy(group, node.runtimeName, (ignored, error) -> {
+        MAIN.post(() -> {
+        SubscriptionProfile active = subscriptions.getActive();
+        if (active == null || !active.id.equals(profile.id)
+                || !profile.id.equals(ProxyRuntimeCoordinator.getActiveRuntimeId())) {
+            callback.onResult("当前订阅已变化，请刷新节点列表"); return;
+        }
+        if (!EmbeddedProxyRoute.isEnabled() || !ProxyRuntimeCoordinator.isRoutingReady()
+                || ProxyRuntimeCoordinator.isBusy()
+                || !SWITCHING.compareAndSet(false, true)) {
+            callback.onResult("请先连接代理，并等待当前操作完成"); return;
+        }
+        long epoch = ProxyRuntimeCoordinator.getEpoch();
+        MihomoCoreManager.changeProxy("GLOBAL", node.runtimeName, (ignored, error) -> MAIN.post(() -> {
+            SWITCHING.set(false);
+            if (epoch != ProxyRuntimeCoordinator.getEpoch() || !EmbeddedProxyRoute.isEnabled()) {
+                callback.onResult("操作已取消，代理状态已经变化"); return;
+            }
             if (error == null) {
+                node.selected = true;
                 subscriptions.saveNode(profile.id, group, node.runtimeName,
                         node.automatic ? SubscriptionProfile.MODE_AUTO : SubscriptionProfile.MODE_MANUAL,
                         nodeCount);
+                EmbeddedProxyRoute.refresh();
+                MihomoCoreManager.closeConnections((data, closeError) -> { });
             }
             callback.onResult(error);
+        }));
         });
     }
 
-    public void testAll(SubscriptionProfile profile, List<ProxyNode> nodes,
+    public TestSession testAll(SubscriptionProfile profile, List<ProxyNode> nodes,
                         DelayProgress progress) {
+        TestSession session = new TestSession();
+        long epoch = ProxyRuntimeCoordinator.getEpoch();
         List<ProxyNode> targets = new ArrayList<>();
         for (ProxyNode node : nodes) {
-            if (!node.automatic) {
-                node.delayMs = ProxyNode.DELAY_TESTING;
-                targets.add(node);
-            }
+            node.delayMs = ProxyNode.DELAY_TESTING;
+            targets.add(node);
         }
         if (targets.isEmpty()) {
             progress.onComplete();
-            return;
+            return session;
         }
         AtomicInteger completed = new AtomicInteger();
         AtomicInteger next = new AtomicInteger();
         Runnable[] launchNext = new Runnable[1];
         launchNext[0] = () -> {
+            if (session.isCancelled()) return;
+            if (epoch != ProxyRuntimeCoordinator.getEpoch()) {
+                session.cancel();
+                progress.onComplete();
+                return;
+            }
             int index = next.getAndIncrement();
             if (index >= targets.size()) {
                 return;
@@ -107,6 +146,10 @@ public final class ProxyNodeManager {
             ProxyNode node = targets.get(index);
             MihomoCoreManager.testDelay(
                     node.runtimeName, TEST_URL, TEST_TIMEOUT_MS, (data, error) -> {
+                        if (session.isCancelled()) return;
+                        if (epoch != ProxyRuntimeCoordinator.getEpoch()) {
+                            session.cancel(); progress.onComplete(); return;
+                        }
                         int delay = ProxyNode.DELAY_TIMEOUT;
                         if (error == null) {
                             try {
@@ -125,7 +168,7 @@ public final class ProxyNodeManager {
                         if (count == targets.size()) {
                             progress.onComplete();
                         } else {
-                            launchNext[0].run();
+                            DELAY_EXECUTOR.execute(launchNext[0]);
                         }
                     });
         };
@@ -133,6 +176,7 @@ public final class ProxyNodeManager {
         for (int index = 0; index < concurrency; index++) {
             DELAY_EXECUTOR.execute(launchNext[0]);
         }
+        return session;
     }
 
     private static Parsed parse(String data, SubscriptionProfile profile) throws JSONException {
@@ -145,7 +189,6 @@ public final class ProxyNodeManager {
         JSONArray members = groupObject.optJSONArray("all");
         String current = groupObject.optString("now", "");
         List<ProxyNode> nodes = new ArrayList<>();
-        ProxyNode automatic = null;
         if (members != null) {
             for (int index = 0; index < members.length(); index++) {
                 String name = members.optString(index, "");
@@ -153,58 +196,50 @@ public final class ProxyNodeManager {
                     continue;
                 }
                 JSONObject object = proxies.optJSONObject(name);
-                String type = object == null ? "Unknown" : object.optString("type", "Unknown");
+                // A selector/automatic group containing DIRECT can bypass the proxy even
+                // when GLOBAL points at that group. Only offer complete proxy-only paths.
+                if (!isProxyOnly(proxies, name, new HashSet<>())) continue;
+                String type = object.optString("type", "Unknown");
                 boolean auto = isAutomatic(type);
-                if (isNestedSelector(type) && !auto) {
-                    continue;
-                }
-                ProxyNode node = new ProxyNode(auto ? "自动选择" : name, name, type, auto);
+                ProxyNode node = new ProxyNode(auto ? "自动 · " + name
+                        : isNestedSelector(type) ? "策略组 · " + name : name, name, type, auto);
                 node.selected = name.equals(current);
                 DelayEntry cached = DELAYS.get(cacheKey(profile.id, name));
                 if (cached != null && System.currentTimeMillis() - cached.time < CACHE_MS) {
                     node.delayMs = cached.delay;
                 }
-                if (auto && automatic == null) {
-                    automatic = node;
-                } else if (!auto) {
-                    nodes.add(node);
-                }
+                nodes.add(node);
             }
         }
         Collections.sort(nodes, (left, right) ->
                 String.CASE_INSENSITIVE_ORDER.compare(left.name, right.name));
-        if (automatic != null) {
-            nodes.add(0, automatic);
-        }
         return new Parsed(group, nodes);
     }
 
-    private static String selectGroup(JSONObject proxies, String savedGroup) {
-        if (savedGroup != null && isSelectable(proxies.optJSONObject(savedGroup))) {
-            return savedGroup;
+    private static boolean isProxyOnly(JSONObject proxies, String name, Set<String> visiting) {
+        if (INTERNAL.contains(name.toUpperCase(Locale.US)) || !visiting.add(name)) return false;
+        JSONObject object = proxies.optJSONObject(name);
+        if (object == null) { visiting.remove(name); return false; }
+        String type = object.optString("type", "");
+        if ("direct".equalsIgnoreCase(type) || "pass".equalsIgnoreCase(type)
+                || "reject".equalsIgnoreCase(type)) { visiting.remove(name); return false; }
+        JSONArray members = object.optJSONArray("all");
+        boolean safe = members == null || members.length() > 0;
+        if (members != null) {
+            for (int index = 0; safe && index < members.length(); index++) {
+                safe = isProxyOnly(proxies, members.optString(index, ""), visiting);
+            }
         }
+        visiting.remove(name);
+        return safe;
+    }
+
+    private static String selectGroup(JSONObject proxies, String savedGroup) {
+        // Runtime is deliberately global; editing a saved subscription group can have no effect.
         if (isSelectable(proxies.optJSONObject("GLOBAL"))) {
             return "GLOBAL";
         }
-        String preferred = null;
-        JSONArray names = proxies.names();
-        if (names == null) {
-            return null;
-        }
-        for (int index = 0; index < names.length(); index++) {
-            String name = names.optString(index);
-            if (!isSelectable(proxies.optJSONObject(name))) {
-                continue;
-            }
-            String lower = name.toLowerCase(Locale.US);
-            if (lower.contains("proxy") || name.contains("节点") || name.contains("选择")) {
-                return name;
-            }
-            if (preferred == null) {
-                preferred = name;
-            }
-        }
-        return preferred;
+        return null;
     }
 
     private static boolean isSelectable(JSONObject object) {

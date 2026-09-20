@@ -82,6 +82,9 @@ public class MainApplication extends MultiDexApplication { // fix: Didn't find c
             }
         }
 
+        // Install the persistent selector before constructing UI/API clients.
+        com.liskovsoft.smartyoutubetv2.common.proxy.EmbeddedProxyRoute.install(this);
+
         setupGlobalExceptionHandler();
         setupViewManager();
 
@@ -213,3 +216,4 @@ public class MainApplication extends MultiDexApplication { // fix: Didn't find c
         }
     }
 }
+

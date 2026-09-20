@@ -44,6 +44,7 @@ import com.liskovsoft.smartyoutubetv2.common.exoplayer.errors.DashDefaultLoadErr
 import com.liskovsoft.smartyoutubetv2.common.exoplayer.errors.SabrDefaultLoadErrorHandlingPolicy;
 import com.liskovsoft.smartyoutubetv2.common.exoplayer.errors.TrackErrorFixer;
 import com.liskovsoft.smartyoutubetv2.common.prefs.PlayerTweaksData;
+import com.liskovsoft.smartyoutubetv2.common.proxy.EmbeddedProxyRoute;
 import com.liskovsoft.smartyoutubetv2.common.utils.Utils;
 import com.liskovsoft.googlecommon.common.helpers.DefaultHeaders;
 
@@ -67,6 +68,8 @@ public class ExoMediaSourceFactory {
     private static final boolean USE_BANDWIDTH_METER = false;
     private TrackErrorFixer mTrackErrorFixer;
     private DataSource.Factory mMediaDataSourceFactory;
+    private long mRouteEpoch = -1;
+    private int mDataSourceType = -1;
 
     public ExoMediaSourceFactory(Context context) {
         mContext = context;
@@ -125,6 +128,11 @@ public class ExoMediaSourceFactory {
     private HttpDataSource.Factory buildHttpDataSourceFactory(boolean useBandwidthMeter) {
         PlayerTweaksData tweaksData = PlayerTweaksData.instance(mContext);
         int source = tweaksData.getPlayerDataSource();
+        // The embedded flavor always uses a dynamic HTTP transport, including
+        // while disabled: an already-open player must see later route changes.
+        if (EmbeddedProxyRoute.isSupported(mContext)) {
+            source = PlayerTweaksData.PLAYER_DATA_SOURCE_OKHTTP;
+        }
         DefaultBandwidthMeter bandwidthMeter = useBandwidthMeter ? BANDWIDTH_METER : null;
         return source == PlayerTweaksData.PLAYER_DATA_SOURCE_OKHTTP ? buildOkHttpDataSourceFactory(bandwidthMeter) :
                         source == PlayerTweaksData.PLAYER_DATA_SOURCE_CRONET && CronetManager.getEngine(mContext) != null ? buildCronetDataSourceFactory(bandwidthMeter) :
@@ -275,7 +283,9 @@ public class ExoMediaSourceFactory {
      * Use OkHttp for networking
      */
     private HttpDataSource.Factory buildOkHttpDataSourceFactory(DefaultBandwidthMeter bandwidthMeter) {
-        OkHttpDataSourceFactory dataSourceFactory = new OkHttpDataSourceFactory(OkHttpManager.instance().getClient(), USER_AGENT,
+        OkHttpDataSourceFactory dataSourceFactory = new OkHttpDataSourceFactory(
+                EmbeddedProxyRoute.isSupported(mContext) ? EmbeddedProxyRoute.callFactory()
+                        : OkHttpManager.instance().getClient(), USER_AGENT,
                 bandwidthMeter);
         addCommonHeaders(dataSourceFactory);
         return dataSourceFactory;
@@ -370,8 +380,12 @@ public class ExoMediaSourceFactory {
     }
 
     private DataSource.Factory getMediaDataSourceFactory() {
-        if (mMediaDataSourceFactory == null) {
+        long epoch = EmbeddedProxyRoute.isSupported(mContext) ? EmbeddedProxyRoute.getEpoch() : 0;
+        int source = PlayerTweaksData.instance(mContext).getPlayerDataSource();
+        if (mMediaDataSourceFactory == null || mRouteEpoch != epoch || mDataSourceType != source) {
             mMediaDataSourceFactory = buildDataSourceFactory(USE_BANDWIDTH_METER);
+            mRouteEpoch = epoch;
+            mDataSourceType = source;
         }
 
         return mMediaDataSourceFactory;

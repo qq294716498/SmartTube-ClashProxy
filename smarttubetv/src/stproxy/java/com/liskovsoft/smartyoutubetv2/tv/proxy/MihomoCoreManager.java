@@ -65,7 +65,7 @@ public final class MihomoCoreManager {
             "mixed-port: 7890\n" +
             "allow-lan: false\n" +
             "bind-address: 127.0.0.1\n" +
-            "mode: global\n" +
+            "mode: rule\n" +
             "log-level: info\n" +
             "ipv6: false\n" +
             "tun:\n" +
@@ -73,11 +73,13 @@ public final class MihomoCoreManager {
             "proxies: []\n" +
             "proxy-groups: []\n" +
             "rules:\n" +
-            "  - MATCH,DIRECT\n";
+            "  - MATCH,REJECT\n";
 
     private static final AtomicBoolean START_REQUESTED = new AtomicBoolean(false);
     private static final AtomicReference<State> STATE = new AtomicReference<>(State.STOPPED);
     private static final AtomicLong ACTION_IDS = new AtomicLong();
+    private static final AtomicBoolean RELOADING = new AtomicBoolean();
+    private static volatile Map<String, String> rollbackSelection = Collections.singletonMap("GLOBAL", "REJECT");
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "smarttube-mihomo");
         thread.setDaemon(true);
@@ -95,7 +97,7 @@ public final class MihomoCoreManager {
     public static void startIfEnabled(Context context) {
         Context application = context.getApplicationContext();
         if (new ProxyPreferences(application).isEnabled()) {
-            start(application);
+            ProxyRuntimeCoordinator.onCoreReady(application);
         }
     }
 
@@ -222,7 +224,31 @@ public final class MihomoCoreManager {
 
     public static void reloadConfig(File source, Map<String, String> selectedMap,
                                     ResultCallback callback) {
-        EXECUTOR.execute(() -> prepareRuntimeConfig(source, selectedMap, callback));
+        if (!RELOADING.compareAndSet(false, true)) {
+            callback.onResult(null, "正在应用配置，请稍后重试");
+            return;
+        }
+        getProxies((snapshot, snapshotError) -> {
+        String previousNode = "REJECT";
+        if (snapshotError == null) {
+            try {
+                JSONObject global = new JSONObject(snapshot).getJSONObject("proxies").optJSONObject("GLOBAL");
+                if (global != null) previousNode = global.optString("now", "REJECT");
+            } catch (JSONException ignored) { }
+        }
+        rollbackSelection = Collections.singletonMap("GLOBAL", previousNode);
+        EXECUTOR.execute(() -> {
+            try {
+                prepareRuntimeConfig(source, selectedMap, (data, error) -> {
+                    RELOADING.set(false);
+                    callback.onResult(data, error);
+                });
+            } catch (Exception error) {
+                RELOADING.set(false);
+                callback.onResult(null, "准备配置失败，请导出诊断日志");
+            }
+        });
+        });
     }
 
     public static void getProxies(ResultCallback callback) {
@@ -257,6 +283,10 @@ public final class MihomoCoreManager {
         reloadConfig(runtimeConfig(), Collections.emptyMap(), callback);
     }
 
+    public static void closeConnections(ResultCallback callback) {
+        invoke("closeAllConnections", "", callback);
+    }
+
     private static void startInternal(Context context) {
         try {
             recordStage(context, "正在准备初始化配置");
@@ -283,18 +313,19 @@ public final class MihomoCoreManager {
                     return;
                 }
                 recordStage(context, "正在配置本地代理端口");
-                enforceLocalRuntime((ignored, error) -> {
+                ResultCallback bootstrapReady = (ignored, error) -> {
                     if (error != null) {
                         fail("Unable to enforce local Mihomo runtime", null);
                         return;
                     }
                     recordStage(context, "正在等待 127.0.0.1:7890");
                     EXECUTOR.execute(() -> {
-                        if (awaitLoopbackProxy()) {
-                            ProxyRuntimeCoordinator.onCoreReady(context);
-                        }
+                        awaitLoopbackProxy();
                     });
-                });
+                };
+                // Bootstrap is our own closed config. Do not force GLOBAL/DIRECT before
+                // the selected subscription and node have been applied.
+                bootstrapReady.onResult("", null);
             });
         } catch (Throwable error) {
             fail("Mihomo initialization failed", error);
@@ -312,15 +343,10 @@ public final class MihomoCoreManager {
             callback.onResult(null, "Subscription config is missing");
             return;
         }
-        if (source.equals(target)) {
-            applyRuntimeConfig(selectedMap, callback);
-            return;
-        }
-
         File temporary = new File(target.getParentFile(), CONFIG_FILE + ".tmp");
         File previous = new File(target.getParentFile(), CONFIG_FILE + ".previous");
         try {
-            copyFile(source, temporary);
+            RuntimeConfigPolicy.writeSafe(source, temporary);
         } catch (IOException error) {
             callback.onResult(null, "Unable to stage config: " + error.getMessage());
             return;
@@ -343,7 +369,6 @@ public final class MihomoCoreManager {
             }
             applyRuntimeConfig(selectedMap, (data, error) -> {
                 if (error == null) {
-                    previous.delete();
                     callback.onResult(data, null);
                 } else {
                     EXECUTOR.execute(() -> rollback(previous, target, callback, error));
@@ -380,7 +405,7 @@ public final class MihomoCoreManager {
 
     private static void enforceLocalRuntime(ResultCallback callback) {
         invoke("updateConfig",
-                "{\"mixed-port\":7890,\"allow-lan\":false," +
+                "{\"mixed-port\":7890,\"port\":0,\"socks-port\":0,\"redir-port\":0,\"tproxy-port\":0,\"allow-lan\":false," +
                         "\"mode\":\"global\",\"tun\":{\"enable\":false}}",
                 callback);
     }
@@ -394,11 +419,30 @@ public final class MihomoCoreManager {
         try {
             copyFile(previous, target);
             previous.delete();
-            applyRuntimeConfig(Collections.emptyMap(), (ignored, rollbackError) ->
-                    callback.onResult(null, originalError));
+            if (STATE.get() == State.FAILED) {
+                callback.onResult(null, originalError + "；核心状态未知，请重启应用");
+                return;
+            }
+            applyRuntimeConfig(rollbackSelection, (ignored, rollbackError) -> {
+                if (rollbackError != null) {
+                    STATE.set(State.FAILED);
+                    lastError = "旧配置恢复失败，请重启应用";
+                }
+                callback.onResult(null, originalError);
+            });
         } catch (IOException ignored) {
             callback.onResult(null, originalError);
         }
+    }
+
+    public static void acceptRuntime() {
+        EXECUTOR.execute(() -> new File(runtimeConfig().getParentFile(), CONFIG_FILE + ".previous").delete());
+    }
+
+    /** Undo a successful YAML load if restoring the actual selected node failed. */
+    public static void rejectRuntime(String reason, ResultCallback callback) {
+        EXECUTOR.execute(() -> rollback(new File(runtimeConfig().getParentFile(), CONFIG_FILE + ".previous"),
+                runtimeConfig(), callback, reason));
     }
 
     private static void invoke(String method, String data, ResultCallback callback) {
@@ -406,6 +450,24 @@ public final class MihomoCoreManager {
             callback.onResult(null, "Mihomo JNI bridge is not loaded");
             return;
         }
+        AtomicBoolean finished = new AtomicBoolean();
+        Handler handler = new Handler(Looper.getMainLooper());
+        Runnable timeout = () -> {
+            if (finished.compareAndSet(false, true)) {
+                if ("setupConfig".equals(method)) {
+                    lastError = "配置应用超时，核心状态未知，请重启应用";
+                    STATE.set(State.FAILED);
+                }
+                callback.onResult(null, "Mihomo 操作超时：" + method);
+            }
+        };
+        handler.postDelayed(timeout, "setupConfig".equals(method) ? 30_000 : 12_000);
+        ResultCallback once = (result, error) -> {
+            if (finished.compareAndSet(false, true)) {
+                handler.removeCallbacks(timeout);
+                callback.onResult(result, ProxyErrors.redact(error));
+            }
+        };
         try {
             JSONObject action = new JSONObject();
             action.put("id", Long.toString(ACTION_IDS.incrementAndGet()));
@@ -414,11 +476,11 @@ public final class MihomoCoreManager {
             Clash.INSTANCE.invokeAction(action.toString(), new InvokeInterface() {
                 @Override
                 public void onResult(String result) {
-                    parseActionResult(result, callback);
+                    parseActionResult(result, once);
                 }
             });
         } catch (Throwable error) {
-            callback.onResult(null, error.getMessage());
+            once.onResult(null, "Mihomo 调用失败：" + error.getClass().getSimpleName());
         }
     }
 
@@ -475,9 +537,8 @@ public final class MihomoCoreManager {
     }
 
     private static void writeBootstrapConfigIfMissing(File config) throws IOException {
-        if (config.isFile()) {
-            return;
-        }
+        // Always bootstrap a closed, minimal listener. Never execute an old subscription
+        // before the current policy has sanitized it (including upgrades from old builds).
         File temporary = new File(config.getParentFile(), CONFIG_FILE + ".tmp");
         try (FileOutputStream output = new FileOutputStream(temporary)) {
             output.write(PHASE_TWO_CONFIG.getBytes(StandardCharsets.UTF_8));
@@ -541,7 +602,7 @@ public final class MihomoCoreManager {
         String timestamp = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
                 .format(new Date());
         try (FileOutputStream output = new FileOutputStream(file, true)) {
-            output.write((timestamp + " | " + text + "\n").getBytes(StandardCharsets.UTF_8));
+            output.write((timestamp + " | " + ProxyErrors.redact(text) + "\n").getBytes(StandardCharsets.UTF_8));
             output.flush();
             output.getFD().sync();
         } catch (IOException ignored) {
@@ -598,17 +659,13 @@ public final class MihomoCoreManager {
     }
 
     private static void fail(String message, Throwable error) {
-        lastError = error == null || error.getMessage() == null
-                ? message : message + ": " + error.getMessage();
+        lastError = ProxyErrors.redact(error == null || error.getMessage() == null
+                ? message : message + ": " + error.getMessage());
         STATE.set(State.FAILED);
         recordStage(appContext, "初始化失败：" + lastError);
         if (error != null) {
             appendDiagnostic(appContext, stackTrace(error));
         }
-        if (error == null) {
-            Log.e(TAG, message);
-        } else {
-            Log.e(TAG, message, error);
-        }
+        Log.e(TAG, lastError);
     }
 }

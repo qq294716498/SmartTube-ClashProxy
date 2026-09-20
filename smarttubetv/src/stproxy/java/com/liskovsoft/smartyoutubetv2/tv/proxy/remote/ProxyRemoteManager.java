@@ -16,6 +16,7 @@ import com.google.zxing.BarcodeFormat;
 import com.google.zxing.MultiFormatWriter;
 import com.google.zxing.common.BitMatrix;
 import com.liskovsoft.sharedutils.helpers.MessageHelpers;
+import com.liskovsoft.smartyoutubetv2.tv.proxy.ProxyErrors;
 import com.liskovsoft.smartyoutubetv2.tv.proxy.data.ProxyNodeManager;
 import com.liskovsoft.smartyoutubetv2.tv.proxy.data.ProxyPreferences;
 import com.liskovsoft.smartyoutubetv2.tv.proxy.data.SubscriptionManager;
@@ -45,12 +46,13 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /** A token-protected LAN page for managing the TV proxy from a phone. */
 public final class ProxyRemoteManager {
     private static final int MAX_BODY_BYTES = 64 * 1024;
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
-    private static final ExecutorService CLIENTS = Executors.newCachedThreadPool(runnable -> {
+    private static final ExecutorService CLIENTS = Executors.newFixedThreadPool(4, runnable -> {
         Thread thread = new Thread(runnable, "proxy-phone-client");
         thread.setDaemon(true);
         return thread;
@@ -64,6 +66,8 @@ public final class ProxyRemoteManager {
     private final String token;
     private final ServerSocket server;
     private final String address;
+    private final AtomicBoolean operationPending = new AtomicBoolean();
+    private volatile String operationStatus = "准备就绪";
 
     private ProxyRemoteManager(Context context) throws Exception {
         this.context = context.getApplicationContext();
@@ -81,6 +85,7 @@ public final class ProxyRemoteManager {
         Thread accept = new Thread(this::acceptLoop, "proxy-phone-server");
         accept.setDaemon(true);
         accept.start();
+        MAIN.postDelayed(() -> { try { server.close(); } catch (Exception ignored) { } }, 15 * 60 * 1000L);
     }
 
     public static void show(Context context) {
@@ -115,7 +120,7 @@ public final class ProxyRemoteManager {
         layout.addView(qr, new LinearLayout.LayoutParams(size, size));
 
         TextView instructions = new TextView(activityContext);
-        instructions.setText("手机与电视连接同一局域网后扫码。\n可在手机上添加、编辑、删除订阅并选择节点。\n\n" + address);
+        instructions.setText("手机与电视连接同一局域网后扫码。\n可管理订阅并选择节点；本次入口 15 分钟后自动关闭。\n\n" + address);
         instructions.setTextSize(18);
         instructions.setGravity(Gravity.CENTER);
         instructions.setTextIsSelectable(true);
@@ -197,29 +202,42 @@ public final class ProxyRemoteManager {
     }
 
     private void handleAction(String path, Map<String, String> values) {
+        if (!operationPending.compareAndSet(false, true)) return;
+        operationStatus = "正在执行，请稍候；页面会自动刷新";
         String id = values.get("id");
-        if ("/save".equals(path)) {
-            String url = trim(values.get("url"));
-            if (!isHttpUrl(url)) return;
-            SubscriptionProfile saved = id == null || id.isEmpty()
-                    ? subscriptions.add(values.get("name"), url)
-                    : subscriptions.edit(id, values.get("name"), url);
-            if (saved != null) subscriptions.update(saved.id, (profile, error) -> { });
-        } else if ("/delete".equals(path)) {
-            subscriptions.delete(id);
-        } else if ("/activate".equals(path)) {
-            subscriptions.activate(id, (profile, error) -> { });
-        } else if ("/node".equals(path)) {
-            SubscriptionProfile profile = subscriptions.get(id);
-            String group = values.get("group");
-            String nodeName = values.get("node");
-            int count = parseInt(values.get("count"));
-            if (profile != null && group != null && nodeName != null) {
-                ProxyNode node = new ProxyNode(nodeName, nodeName, "Unknown", false);
-                nodes.switchNode(profile, group, node, count, error -> { });
-            }
-        }
-        MAIN.post(() -> MessageHelpers.showMessage(context, "手机端代理设置已更新"));
+        try {
+            if ("/save".equals(path)) {
+                String url = trim(values.get("url"));
+                if (!isHttpUrl(url)) { complete("请输入有效 HTTP 或 HTTPS 地址"); return; }
+                SubscriptionProfile saved = id == null || id.isEmpty()
+                        ? subscriptions.add(values.get("name"), url)
+                        : subscriptions.edit(id, values.get("name"), url);
+                if (saved == null) { complete("订阅不存在"); return; }
+                subscriptions.update(saved.id, (profile, error) -> complete(error));
+            } else if ("/delete".equals(path)) {
+                complete(subscriptions.delete(id) == null ? "订阅不存在" : null);
+            } else if ("/activate".equals(path)) {
+                subscriptions.activate(id, (profile, error) -> complete(error));
+            } else if ("/node".equals(path)) {
+                SubscriptionProfile profile = subscriptions.getActive();
+                if (profile == null || !profile.id.equals(id)) { complete("当前订阅已改变，请刷新"); return; }
+                NodeSnapshot snapshot = loadNodes(profile);
+                if (snapshot.error != null) { complete(snapshot.error); return; }
+                ProxyNode target = null;
+                for (ProxyNode candidate : snapshot.nodes) {
+                    if (candidate.runtimeName.equals(values.get("node"))) { target = candidate; break; }
+                }
+                if (target == null) { complete("节点已不存在，请刷新"); return; }
+                nodes.switchNode(profile, snapshot.group, target, snapshot.nodes.size(), this::complete);
+            } else complete("未知操作");
+        } catch (Exception error) { complete("操作失败：" + error.getClass().getSimpleName()); }
+    }
+
+    private void complete(String error) {
+        operationStatus = error == null ? "操作成功" : ProxyErrors.redact(error);
+        operationPending.set(false);
+        MAIN.post(() -> MessageHelpers.showMessage(context,
+                error == null ? "手机端设置已生效" : "手机端操作失败，请查看手机页面"));
     }
 
     private String renderPage() {
@@ -227,6 +245,7 @@ public final class ProxyRemoteManager {
         SubscriptionProfile active = subscriptions.getActive();
         StringBuilder html = new StringBuilder(8192);
         html.append("<!doctype html><html lang=zh-CN><head><meta charset=utf-8>")
+                .append(operationPending.get() ? "<meta http-equiv=refresh content=3>" : "")
                 .append("<meta name=viewport content='width=device-width,initial-scale=1'>")
                 .append("<title>优兔喵视频代理管理</title><style>")
                 .append("body{margin:0;background:#07101f;color:#eef5ff;font-family:system-ui;padding:18px}")
@@ -235,6 +254,8 @@ public final class ProxyRemoteManager {
                 .append("input,select{color:#fff;background:#081324;border:1px solid #405679}button{border:0;background:#1677ff;color:#fff;font-weight:700}")
                 .append(".danger{background:#a52d36}.secondary{background:#344967}.ok{color:#58e6a9}.muted{color:#9fb0c8;font-size:14px}</style></head><body><main>")
                 .append("<h1>优兔喵视频 · 代理管理</h1><p class=muted>此页面只在当前局域网和本次电视应用运行期间有效。</p>");
+        html.append("<section class=card><b>操作状态：</b>").append(escape(operationStatus))
+                .append("<p><a style='color:#73baff' href='/?token=").append(token).append("'>刷新状态</a></p></section>");
         for (SubscriptionProfile profile : profiles) {
             html.append("<section class=card><h2>").append(escape(profile.name));
             if (profile.active) html.append(" <span class=ok>● 当前</span>");
@@ -315,7 +336,7 @@ public final class ProxyRemoteManager {
         byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
         writer.write("HTTP/1.1 " + code + (code == 200 ? " OK" : " Error") + "\r\n");
         writer.write("Content-Type: " + type + "\r\nContent-Length: " + bytes.length +
-                "\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n");
+                "\r\nCache-Control: no-store\r\nReferrer-Policy: no-referrer\r\nX-Frame-Options: DENY\r\nConnection: close\r\n\r\n");
         writer.flush();
         socketWrite(writer, value);
     }
