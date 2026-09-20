@@ -298,9 +298,9 @@ public final class ProxySettingsPresenter {
             if (error == null) {
                 MessageHelpers.showMessage(context, "订阅更新成功");
             } else if (updated != null && updated.configPath != null && new java.io.File(updated.configPath).isFile()) {
-                MessageHelpers.showLongMessage(context, "订阅更新失败，正在使用上次配置");
+                MessageHelpers.showLongMessage(context, "订阅更新失败：" + error + "；正在使用上次配置");
             } else {
-                MessageHelpers.showLongMessage(context, "订阅不可用");
+                MessageHelpers.showLongMessage(context, "订阅不可用：" + error);
             }
             navigateTo(() -> showSubscriptionDetails(profile.id));
         }));
