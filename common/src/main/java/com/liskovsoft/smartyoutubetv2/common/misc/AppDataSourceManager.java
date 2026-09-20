@@ -20,7 +20,6 @@ import com.liskovsoft.smartyoutubetv2.common.app.presenters.settings.SearchSetti
 import com.liskovsoft.smartyoutubetv2.common.app.presenters.settings.SubtitleSettingsPresenter;
 import com.liskovsoft.smartyoutubetv2.common.exoplayer.selector.FormatItem.VideoPreset;
 import com.liskovsoft.smartyoutubetv2.common.utils.Utils;
-import com.liskovsoft.smartyoutubetv2.common.proxy.EmbeddedProxySettingsBridge;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -50,11 +49,6 @@ public class AppDataSourceManager {
                 context.getString(R.string.settings_language_country), () -> LanguageSettingsPresenter.instance(context).show(), R.drawable.settings_language));
         settingItems.add(new SettingsItem(
                 context.getString(R.string.settings_general), () -> GeneralSettingsPresenter.instance(context).show(), R.drawable.settings_app));
-        if (EmbeddedProxySettingsBridge.isAvailable()) {
-            settingItems.add(new SettingsItem(
-                    context.getString(R.string.settings_network_proxy),
-                    () -> EmbeddedProxySettingsBridge.show(context), R.drawable.settings_app));
-        }
         settingItems.add(new SettingsItem(
                 context.getString(R.string.settings_main_ui), () -> MainUISettingsPresenter.instance(context).show(), R.drawable.settings_main_ui));
         settingItems.add(new SettingsItem(

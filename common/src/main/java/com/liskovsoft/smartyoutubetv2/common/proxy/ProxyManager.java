@@ -162,8 +162,11 @@ public class ProxyManager {
      */
     @RequiresApi(api = Build.VERSION_CODES.KITKAT)
     public void saveProxyInfoToPrefs(Proxy proxy, boolean enable) {
-        if (proxy != null)
-            mProxy = new Proxy(proxy.type(), proxy.address());
+        if (proxy != null) {
+            mProxy = proxy.type() == Proxy.Type.DIRECT
+                    ? Proxy.NO_PROXY
+                    : new Proxy(proxy.type(), proxy.address());
+        }
         mEnabled = enable;
         String proxyUriString = getProxyUriString();
         
@@ -310,7 +313,7 @@ public class ProxyManager {
                 if (clazz.getName().contains("ProxyChangeListener")) {
                     Method onReceiveMethod = clazz.getDeclaredMethod("onReceive", Context.class, Intent.class);
                     Intent intent = new Intent(android.net.Proxy.PROXY_CHANGE_ACTION);
-                    Object proxyInfo = createProxyChangeInfo(proxyAddr);
+                    Object proxyInfo = proxyAddr == null ? null : createProxyChangeInfo(proxyAddr);
                     intent.putExtra("android.intent.extra.PROXY_INFO", (Parcelable) proxyInfo);
                     onReceiveMethod.invoke(rec, appContext, intent);
                 }

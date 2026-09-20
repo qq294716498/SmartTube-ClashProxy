@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">SmartTube Proxy</string>
+    <string name="app_name">优兔喵视频</string>
+    <string name="browse_title">优兔喵视频</string>
 </resources>
