@@ -2,7 +2,7 @@ name: Build SmartTube Proxy
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "codex/clash-tv-audit" ]
     paths-ignore:
       - "docs/**"
   workflow_dispatch:
@@ -39,6 +39,9 @@ jobs:
 
       - name: Lint proxy flavor
         run: ./gradlew lintStproxyDebug
+
+      - name: Test embedded proxy safety policy
+        run: ./gradlew :smarttubetv:testStproxyDebugUnitTest --tests 'com.liskovsoft.smartyoutubetv2.tv.proxy.*'
 
       - name: Build proxy flavor
         run: ./gradlew clean assembleStproxyDebug

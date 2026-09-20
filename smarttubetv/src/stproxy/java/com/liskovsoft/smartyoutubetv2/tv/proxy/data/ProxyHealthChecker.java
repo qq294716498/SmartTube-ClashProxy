@@ -39,10 +39,11 @@ public final class ProxyHealthChecker {
         EXECUTOR.execute(() -> {
             Result result = new Result();
             result.localProxy = checkLocalProxy();
-            result.dns = checkDns();
+            // Local DNS does not measure DNS through Mihomo and can block without a timeout.
+            result.dns = false;
             if (result.localProxy) {
-                result.youtube = checkHttps("https://www.youtube.com/generate_204");
-                result.googleVideo = checkHttps("https://redirector.googlevideo.com/report_mapping?di=no");
+                result.youtube = checkHttps("https://www.youtube.com/generate_204", true);
+                result.googleVideo = checkHttps("https://redirector.googlevideo.com/report_mapping?di=no", false);
             }
             callback.onResult(result);
         });
@@ -58,15 +59,7 @@ public final class ProxyHealthChecker {
         }
     }
 
-    private static boolean checkDns() {
-        try {
-            return InetAddress.getAllByName("www.youtube.com").length > 0;
-        } catch (Exception ignored) {
-            return false;
-        }
-    }
-
-    private static boolean checkHttps(String address) {
+    private static boolean checkHttps(String address, boolean expectNoContent) {
         HttpURLConnection connection = null;
         try {
             Proxy proxy = new Proxy(Proxy.Type.HTTP, new InetSocketAddress(
@@ -81,7 +74,7 @@ public final class ProxyHealthChecker {
             if (stream != null) {
                 stream.close();
             }
-            return response >= 200 && response < 500;
+            return expectNoContent ? response == 204 : response >= 200 && response < 400;
         } catch (Exception ignored) {
             return false;
         } finally {

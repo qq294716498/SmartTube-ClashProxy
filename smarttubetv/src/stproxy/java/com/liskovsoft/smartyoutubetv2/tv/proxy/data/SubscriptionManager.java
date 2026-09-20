@@ -4,6 +4,8 @@ import android.content.Context;
 
 import com.liskovsoft.smartyoutubetv2.tv.proxy.MihomoCoreManager;
 import com.liskovsoft.smartyoutubetv2.tv.proxy.ProxyRuntimeCoordinator;
+import com.liskovsoft.smartyoutubetv2.tv.proxy.ProxyErrors;
+import com.liskovsoft.smartyoutubetv2.tv.proxy.RuntimeConfigPolicy;
 import com.liskovsoft.smartyoutubetv2.tv.proxy.model.SubscriptionProfile;
 
 import java.io.BufferedInputStream;
@@ -14,6 +16,9 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.HashSet;
+import java.util.Collections;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -23,6 +28,8 @@ public final class SubscriptionManager {
     }
 
     private static final int MAX_CONFIG_BYTES = 10 * 1024 * 1024;
+    private static final Object LOCK = new Object();
+    private static final Set<String> UPDATING = Collections.synchronizedSet(new HashSet<>());
     private static final ExecutorService IO = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "smarttube-subscriptions");
         thread.setDaemon(true);
@@ -39,11 +46,14 @@ public final class SubscriptionManager {
         root = new File(this.context.getFilesDir(), "proxy/subscriptions");
     }
 
-    public synchronized List<SubscriptionProfile> list() {
+    public List<SubscriptionProfile> list() {
+        synchronized (LOCK) {
         return copy(preferences.loadProfiles());
+        }
     }
 
-    public synchronized SubscriptionProfile get(String id) {
+    public SubscriptionProfile get(String id) {
+        synchronized (LOCK) {
         if (id == null) {
             return null;
         }
@@ -53,13 +63,17 @@ public final class SubscriptionManager {
             }
         }
         return null;
+        }
     }
 
-    public synchronized SubscriptionProfile getActive() {
+    public SubscriptionProfile getActive() {
+        synchronized (LOCK) {
         return get(preferences.getActiveId());
+        }
     }
 
-    public synchronized SubscriptionProfile add(String name, String url) {
+    public SubscriptionProfile add(String name, String url) {
+        synchronized (LOCK) {
         List<SubscriptionProfile> profiles = preferences.loadProfiles();
         String safeName = normalizeName(name, profiles.size() + 1);
         SubscriptionProfile profile = SubscriptionProfile.create(safeName, url.trim());
@@ -71,9 +85,11 @@ public final class SubscriptionManager {
         }
         preferences.saveProfiles(profiles, activeId);
         return profile.copy();
+        }
     }
 
-    public synchronized SubscriptionProfile edit(String id, String name, String url) {
+    public SubscriptionProfile edit(String id, String name, String url) {
+        synchronized (LOCK) {
         List<SubscriptionProfile> profiles = preferences.loadProfiles();
         for (SubscriptionProfile profile : profiles) {
             if (profile.id.equals(id)) {
@@ -84,10 +100,18 @@ public final class SubscriptionManager {
             }
         }
         return null;
+        }
     }
 
     public void update(String id, Callback callback) {
-        IO.execute(() -> updateInternal(id, callback));
+        if (id == null || !UPDATING.add(id)) {
+            callback.onComplete(get(id), "此订阅正在更新，请稍后");
+            return;
+        }
+        IO.execute(() -> updateInternal(id, (profile, error) -> {
+            UPDATING.remove(id);
+            callback.onComplete(profile, ProxyErrors.redact(error));
+        }));
     }
 
     public void activate(String id, Callback callback) {
@@ -97,7 +121,7 @@ public final class SubscriptionManager {
             return;
         }
         if (!preferences.isEnabled()) {
-            synchronized (this) {
+            synchronized (LOCK) {
                 preferences.saveProfiles(preferences.loadProfiles(), id);
             }
             ProxyRuntimeCoordinator.applyDirect(context);
@@ -106,7 +130,7 @@ public final class SubscriptionManager {
         }
         ProxyRuntimeCoordinator.activate(context, profile, (error) -> {
             if (error == null) {
-                synchronized (this) {
+                synchronized (LOCK) {
                     List<SubscriptionProfile> profiles = preferences.loadProfiles();
                     preferences.saveProfiles(profiles, id);
                 }
@@ -115,7 +139,8 @@ public final class SubscriptionManager {
         });
     }
 
-    public synchronized SubscriptionProfile delete(String id) {
+    public SubscriptionProfile delete(String id) {
+        synchronized (LOCK) {
         List<SubscriptionProfile> profiles = preferences.loadProfiles();
         boolean wasActive = id != null && id.equals(preferences.getActiveId());
         SubscriptionProfile removed = null;
@@ -128,6 +153,11 @@ public final class SubscriptionManager {
         }
         if (removed == null) {
             return null;
+        }
+        if (wasActive) {
+            // Deleting the route is an explicit disable; never silently switch to another subscription.
+            preferences.setEnabled(false);
+            ProxyRuntimeCoordinator.setEnabled(context, false, ignored -> { });
         }
         deleteRecursively(profileDirectory(removed.id));
         String nextActive = wasActive && !profiles.isEmpty() ? profiles.get(0).id
@@ -146,10 +176,12 @@ public final class SubscriptionManager {
             }
         }
         return removed.copy();
+        }
     }
 
-    public synchronized void saveNode(String id, String group, String node, String mode,
+    public void saveNode(String id, String group, String node, String mode,
                                       int nodeCount) {
+        synchronized (LOCK) {
         List<SubscriptionProfile> profiles = preferences.loadProfiles();
         for (SubscriptionProfile profile : profiles) {
             if (profile.id.equals(id)) {
@@ -161,6 +193,7 @@ public final class SubscriptionManager {
             }
         }
         preferences.saveProfiles(profiles, preferences.getActiveId());
+        }
     }
 
     private void updateInternal(String id, Callback callback) {
@@ -170,11 +203,21 @@ public final class SubscriptionManager {
             return;
         }
         File directory = profileDirectory(profile.id);
-        File temporary = new File(directory, "config.tmp");
+        File temporary = new File(directory, "config-" + java.util.UUID.randomUUID() + ".tmp");
         File config = new File(directory, "config.yaml");
         try {
             ensureDirectory(directory);
-            download(profile.url, temporary);
+            try {
+                download(profile.url, temporary, false);
+            } catch (IOException directError) {
+                if (!ProxyRuntimeCoordinator.isRoutingReady(context)) throw directError;
+                download(profile.url, temporary, true);
+            }
+            File normalized = new File(directory, temporary.getName() + ".safe");
+            try {
+                RuntimeConfigPolicy.writeSafe(temporary, normalized);
+                atomicReplace(normalized, temporary);
+            } finally { normalized.delete(); }
         } catch (Exception error) {
             temporary.delete();
             markUpdate(profile.id, false);
@@ -192,6 +235,13 @@ public final class SubscriptionManager {
                 return;
             }
             MihomoCoreManager.validateConfig(temporary, (data, validationError) -> IO.execute(() -> {
+                synchronized (LOCK) {
+                SubscriptionProfile current = get(profile.id);
+                if (current == null || !profile.url.equals(current.url)) {
+                    temporary.delete();
+                    callback.onComplete(current, "订阅已被删除或修改，请重新更新");
+                    return;
+                }
                 if (validationError != null) {
                     temporary.delete();
                     markUpdate(profile.id, false);
@@ -212,11 +262,13 @@ public final class SubscriptionManager {
                     markUpdate(profile.id, false);
                     callback.onComplete(get(profile.id), "无法保存订阅配置");
                 }
+                }
             }));
         });
     }
 
-    private synchronized void markUpdate(String id, boolean success) {
+    private void markUpdate(String id, boolean success) {
+        synchronized (LOCK) {
         List<SubscriptionProfile> profiles = preferences.loadProfiles();
         for (SubscriptionProfile profile : profiles) {
             if (profile.id.equals(id)) {
@@ -227,6 +279,7 @@ public final class SubscriptionManager {
             }
         }
         preferences.saveProfiles(profiles, preferences.getActiveId());
+        }
     }
 
     private File configFile(String id) {
@@ -237,21 +290,32 @@ public final class SubscriptionManager {
         return new File(root, "sub_" + id);
     }
 
-    private static void download(String value, File destination) throws IOException {
+    private static void download(String value, File destination, boolean viaProxy) throws IOException {
         URL url = new URL(value);
         if (!isHttpProtocol(url)) {
             throw new IOException("订阅地址必须使用 HTTP 或 HTTPS");
         }
-        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+        java.net.Proxy route = viaProxy ? new java.net.Proxy(java.net.Proxy.Type.HTTP,
+                new java.net.InetSocketAddress(MihomoCoreManager.LOOPBACK_HOST, MihomoCoreManager.MIXED_PORT))
+                : java.net.Proxy.NO_PROXY;
+        for (int redirect = 0; redirect < 6; redirect++) {
+        HttpURLConnection connection = (HttpURLConnection) url.openConnection(route);
         connection.setConnectTimeout(10_000);
         connection.setReadTimeout(20_000);
-        connection.setInstanceFollowRedirects(true);
+        connection.setInstanceFollowRedirects(false);
         // Many subscription panels select the output format from the client identifier.
         // Use the Mihomo-compatible identifier so the response is Clash YAML.
         connection.setRequestProperty("User-Agent", "clash.meta");
         connection.setRequestProperty("Accept", "application/yaml, text/yaml, text/plain, */*");
         try {
             int status = connection.getResponseCode();
+            if (status == 301 || status == 302 || status == 303 || status == 307 || status == 308) {
+                String location = connection.getHeaderField("Location");
+                if (location == null) throw new IOException("订阅重定向缺少地址");
+                url = new URL(url, location);
+                if (!isHttpProtocol(url)) throw new IOException("订阅重定向仅支持 HTTP 或 HTTPS");
+                continue;
+            }
             if (status < 200 || status >= 300) {
                 throw new IOException("订阅服务器返回 " + status);
             }
@@ -276,9 +340,12 @@ public final class SubscriptionManager {
             if (total == 0) {
                 throw new IOException("订阅内容为空");
             }
+            return;
         } finally {
             connection.disconnect();
         }
+        }
+        throw new IOException("订阅重定向次数过多");
     }
 
     private static boolean isHttpProtocol(URL url) {
@@ -315,7 +382,7 @@ public final class SubscriptionManager {
     }
 
     private static String safeError(Exception error) {
-        String message = error.getMessage();
+        String message = ProxyErrors.redact(error.getMessage());
         return message == null || message.isEmpty() ? "订阅更新失败" : message;
     }
 
