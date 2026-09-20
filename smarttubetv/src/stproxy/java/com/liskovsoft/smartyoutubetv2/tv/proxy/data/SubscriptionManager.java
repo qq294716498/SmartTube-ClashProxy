@@ -236,7 +236,7 @@ public final class SubscriptionManager {
         connection.setConnectTimeout(10_000);
         connection.setReadTimeout(20_000);
         connection.setInstanceFollowRedirects(true);
-        connection.setRequestProperty("User-Agent", "SmartTube-Proxy");
+        // Many subscription panels select the output format from the client identifier.\n        // Use the Mihomo-compatible identifier so the response is Clash YAML, not a\n        // generic Base64 list or an upstream 502 response.\n        connection.setRequestProperty("User-Agent", "clash.meta");\n        connection.setRequestProperty("Accept", "application/yaml, text/yaml, text/plain, */*");
         try {
             int status = connection.getResponseCode();
             if (status < 200 || status >= 300) {
