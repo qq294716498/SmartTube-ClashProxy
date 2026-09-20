@@ -320,7 +320,7 @@ public final class ProxySettingsPresenter {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         EditText url = new EditText(context);
-        url.setHint("HTTPS 订阅地址");
+        url.setHint("HTTP/HTTPS 订阅地址");
         url.setSingleLine(true);
         url.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
         url.setText(existing == null ? "" : existing.url);
@@ -336,8 +336,8 @@ public final class ProxySettingsPresenter {
         form.setOnShowListener(ignored -> {
             form.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener(button -> {
                 String enteredUrl = url.getText().toString().trim();
-                if (!isHttpsUrl(enteredUrl)) {
-                    url.setError("请输入有效的 HTTPS 订阅地址");
+                if (!isHttpUrl(enteredUrl)) {
+                    url.setError("请输入有效的 HTTP 或 HTTPS 订阅地址");
                     url.requestFocus();
                     return;
                 }
@@ -461,10 +461,12 @@ public final class ProxySettingsPresenter {
         return delay > 0 ? delay + " ms" : "未测速";
     }
 
-    private static boolean isHttpsUrl(String value) {
+    private static boolean isHttpUrl(String value) {
         try {
             URL url = new URL(value);
-            return "https".equalsIgnoreCase(url.getProtocol()) && url.getHost() != null && !url.getHost().isEmpty();
+            String protocol = url.getProtocol();
+            return ("http".equalsIgnoreCase(protocol) || "https".equalsIgnoreCase(protocol))
+                    && url.getHost() != null && !url.getHost().isEmpty();
         } catch (MalformedURLException ignored) {
             return false;
         }
