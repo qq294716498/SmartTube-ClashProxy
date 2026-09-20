@@ -2,7 +2,7 @@ name: Build SmartTube Proxy
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "codex/clash-tv-audit" ]
     paths-ignore:
       - "docs/**"
   workflow_dispatch:
