@@ -11,6 +11,10 @@ import java.io.File;
  * unchanged while preserving the native class and method names.
  */
 public final class Clash {
+    public interface LoadObserver {
+        void onStage(String stage);
+    }
+
     public static final Clash INSTANCE = new Clash();
 
     private static final int EXPECTED_BRIDGE_ABI = 3;
@@ -22,13 +26,25 @@ public final class Clash {
     }
 
     public synchronized void load(String nativeLibraryDirectory) {
+        load(nativeLibraryDirectory, stage -> { });
+    }
+
+    public synchronized void load(String nativeLibraryDirectory, LoadObserver observer) {
         if (loaded) {
+            observer.onStage("Mihomo native 库已经加载");
             return;
         }
 
         try {
+            observer.onStage("正在加载 libclash.so");
             System.load(resolveLibrary(nativeLibraryDirectory, "libclash.so"));
+            observer.onStage("libclash.so 加载成功");
+
+            observer.onStage("正在加载 libmihomo-jni.so");
             System.load(resolveLibrary(nativeLibraryDirectory, "libmihomo-jni.so"));
+            observer.onStage("libmihomo-jni.so 加载成功");
+
+            observer.onStage("正在校验 JNI bridge ABI");
             int actualAbi = nativeBridgeABI();
             if (actualAbi != EXPECTED_BRIDGE_ABI) {
                 throw new IllegalStateException(
@@ -37,8 +53,11 @@ public final class Clash {
             }
             loaded = true;
             initFailure = null;
+            observer.onStage("JNI bridge ABI 校验成功");
         } catch (Throwable error) {
             initFailure = error;
+            observer.onStage("native 库加载失败：" +
+                    (error.getMessage() == null ? error.getClass().getName() : error.getMessage()));
         }
     }
 
