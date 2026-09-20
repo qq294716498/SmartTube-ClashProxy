@@ -60,38 +60,110 @@ public final class ProxySettingsPresenter {
         return active.selectedNode;
     }
 
+    public static int getHomeState(Context context) {
+        if (!new ProxyPreferences(context).isEnabled()) {
+            return 0;
+        }
+        MihomoCoreManager.State state = MihomoCoreManager.getState();
+        if (state == MihomoCoreManager.State.RUNNING) {
+            return 2;
+        }
+        if (state == MihomoCoreManager.State.FAILED) {
+            return 3;
+        }
+        return 1;
+    }
+
     private void showMain() {
         AppDialogPresenter dialog = AppDialogPresenter.instance(context);
         SubscriptionProfile active = subscriptions.getActive();
         boolean enabled = preferences.isEnabled();
+        int state = getHomeState(context);
 
-        String status = !enabled ? "未启用" : active == null ? "未连接"
-                : MihomoCoreManager.getState() == MihomoCoreManager.State.RUNNING ? "已连接" : "正在连接";
-        dialog.appendSingleButton(UiOptionItem.from("代理状态", "● " + status, item -> { }));
-        dialog.appendSingleSwitch(UiOptionItem.from("使用内置代理",
+        dialog.appendSingleButton(UiOptionItem.from(statusTitle(state),
+                selectionSummary(active), item -> { }));
+        dialog.appendSingleSwitch(UiOptionItem.from("代理开关",
                 option -> setEnabled(option.isSelected()), enabled));
+        dialog.appendSingleButton(UiOptionItem.from("订阅与节点",
+                selectionSummary(active), item -> navigateTo(this::showProxyLibrary)));
+        dialog.appendSingleButton(UiOptionItem.from("手机扫码管理",
+                "推荐 · 用手机管理订阅和选择节点",
+                item -> ProxyRemoteManager.show(context)));
+        if (enabled) {
+            dialog.appendSingleButton(UiOptionItem.from("重新连接",
+                    "重新加载当前订阅和节点", item -> reconnect()));
+        }
+        dialog.appendSingleButton(UiOptionItem.from("高级工具",
+                "初始化自检、网络诊断和日志", item -> navigateTo(this::showAdvanced)));
+        dialog.showDialog("Clash 网络代理");
+    }
+
+    private void showProxyLibrary() {
+        AppDialogPresenter dialog = AppDialogPresenter.instance(context);
+        SubscriptionProfile active = subscriptions.getActive();
+
+        dialog.appendSingleButton(UiOptionItem.from("当前订阅",
+                active == null ? "尚未添加" : active.name,
+                item -> {
+                    if (active == null) {
+                        navigateTo(this::showSubscriptions);
+                    } else {
+                        navigateTo(() -> showSubscriptionDetails(active.id));
+                    }
+                }));
+        dialog.appendSingleButton(UiOptionItem.from("当前节点",
+                active == null || active.selectedNode == null ? "尚未选择" : active.selectedNode,
+                item -> activeOrSubscriptions(active)));
+        dialog.appendSingleButton(UiOptionItem.from("管理全部订阅",
+                subscriptions.list().size() + " 个订阅",
+                item -> navigateTo(this::showSubscriptions)));
+        dialog.appendSingleButton(UiOptionItem.from("+ 添加新订阅",
+                "推荐使用手机扫码输入长链接", item -> showSubscriptionForm(null)));
+        dialog.showDialog("订阅与节点");
+    }
+
+    private void activeOrSubscriptions(SubscriptionProfile active) {
+        if (active == null) {
+            navigateTo(this::showSubscriptions);
+        } else {
+            showNodes(active);
+        }
+    }
+
+    private void showAdvanced() {
+        AppDialogPresenter dialog = AppDialogPresenter.instance(context);
         dialog.appendSingleButton(UiOptionItem.from("Mihomo 初始化自检",
                 MihomoCoreManager.getStartupDiagnostic(context),
                 item -> runMihomoSelfTest()));
-        dialog.appendSingleButton(UiOptionItem.from("导出 Mihomo 日志",
+        dialog.appendSingleButton(UiOptionItem.from("代理诊断",
+                "检查本地代理、视频连接和域名解析",
+                item -> runDiagnostics()));
+        dialog.appendSingleButton(UiOptionItem.from("导出诊断日志",
                 "保存到手机“下载/SmartTube-Proxy”",
                 item -> exportMihomoLog()));
-        dialog.appendSingleButton(UiOptionItem.from("手机扫码管理",
-                "用手机添加订阅、删除订阅和选择节点",
-                item -> ProxyRemoteManager.show(context)));
+        dialog.showDialog("高级工具");
+    }
 
-        dialog.appendSingleButton(UiOptionItem.from("当前订阅",
-                active == null ? "尚未添加订阅" : active.name,
-                item -> navigateTo(this::showSubscriptions)));
-        dialog.appendSingleButton(UiOptionItem.from("当前节点",
-                active == null || active.selectedNode == null ? "未选择" : active.selectedNode,
-                item -> showNodes(active)));
-        dialog.appendSingleButton(UiOptionItem.from("订阅管理",
-                subscriptions.list().size() + " 个订阅",
-                item -> navigateTo(this::showSubscriptions)));
-        dialog.appendSingleButton(UiOptionItem.from("重新连接", item -> reconnect()));
-        dialog.appendSingleButton(UiOptionItem.from("代理诊断", item -> runDiagnostics()));
-        dialog.showDialog("网络代理");
+    private static String statusTitle(int state) {
+        switch (state) {
+            case 2:
+                return "● 代理已连接";
+            case 1:
+                return "◐ 正在连接";
+            case 3:
+                return "× 连接异常";
+            default:
+                return "○ 代理已关闭";
+        }
+    }
+
+    private static String selectionSummary(SubscriptionProfile active) {
+        if (active == null) {
+            return "尚未添加订阅";
+        }
+        return active.selectedNode == null || active.selectedNode.isEmpty()
+                ? active.name + " · 未选择节点"
+                : active.name + " · " + active.selectedNode;
     }
 
     /**

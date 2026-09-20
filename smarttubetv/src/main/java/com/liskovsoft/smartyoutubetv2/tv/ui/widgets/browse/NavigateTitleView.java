@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Rect;
+import android.graphics.PorterDuff;
 import android.graphics.drawable.Drawable;
 import android.text.TextUtils;
 import android.util.AttributeSet;
@@ -250,7 +251,8 @@ public class NavigateTitleView extends TitleView implements OnDataChange, Accoun
 
         mIsSearchOrbEnabled = !mainUIData.isTopButtonEnabled(MainUIData.TOP_BUTTON_SEARCH);
         mIsAccountViewEnabled = mainUIData.isTopButtonEnabled(MainUIData.TOP_BUTTON_BROWSE_ACCOUNTS);
-        mIsLanguageViewEnabled = mainUIData.isTopButtonEnabled(MainUIData.TOP_BUTTON_CHANGE_LANGUAGE);
+        // The language shortcut duplicated Settings and occupied the prime top-right slot.
+        mIsLanguageViewEnabled = false;
         mIsProxyViewEnabled = EmbeddedProxySettingsBridge.isAvailable();
         mIsGlobalClockEnabled = GeneralData.instance(getContext()).isGlobalClockEnabled();
 
@@ -331,13 +333,48 @@ public class NavigateTitleView extends TitleView implements OnDataChange, Accoun
         }
 
         String nodeName = EmbeddedProxySettingsBridge.getHomeLabel(getContext());
-        mProxyTitle.setText(nodeName == null ? "" : nodeName);
+        int state = EmbeddedProxySettingsBridge.getHomeState(getContext());
+        boolean running = state == 2;
+
+        Drawable icon = ContextCompat.getDrawable(getContext(), R.drawable.browse_title_proxy);
+        if (icon != null) {
+            icon = icon.mutate();
+            icon.setAlpha(running ? 255 : state == 1 ? 190 : 135);
+            if (running) {
+                icon.clearColorFilter();
+            } else {
+                icon.setColorFilter(Color.rgb(148, 163, 184), PorterDuff.Mode.SRC_ATOP);
+            }
+            mProxyView.setOrbIcon(icon);
+        }
+
+        int normalColor;
+        int brightColor;
+        if (running) {
+            normalColor = Color.rgb(21, 101, 192);
+            brightColor = Color.rgb(33, 150, 243);
+        } else if (state == 1) {
+            normalColor = Color.rgb(154, 103, 0);
+            brightColor = Color.rgb(255, 179, 0);
+        } else if (state == 3) {
+            normalColor = Color.rgb(139, 30, 45);
+            brightColor = Color.rgb(211, 47, 47);
+        } else {
+            normalColor = Color.rgb(31, 41, 55);
+            brightColor = Color.rgb(75, 85, 99);
+        }
+        mProxyView.setOrbColors(new Colors(normalColor, brightColor, Color.TRANSPARENT));
+
+        String visibleName = running ? nodeName : null;
+        mProxyTitle.setText(visibleName == null ? "" : visibleName);
         mProxyTitle.setVisibility(mSearchVisibility == View.VISIBLE &&
-                !TextUtils.isEmpty(nodeName) ? View.VISIBLE : View.GONE);
+                !TextUtils.isEmpty(visibleName) ? View.VISIBLE : View.GONE);
+
+        String status = running ? "已连接" : state == 1 ? "正在连接" :
+                state == 3 ? "连接异常" : "已关闭";
         TooltipCompatHandler.setTooltipText(mProxyView,
-                TextUtils.isEmpty(nodeName)
-                        ? getContext().getString(R.string.settings_network_proxy)
-                        : nodeName);
+                TextUtils.isEmpty(nodeName) ? "Clash 代理 · " + status
+                        : "Clash 代理 · " + status + " · " + nodeName);
     }
 
     private void updateLanguageIcon() {

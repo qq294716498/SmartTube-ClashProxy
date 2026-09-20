@@ -41,4 +41,18 @@ public final class EmbeddedProxySettingsBridge {
             return null;
         }
     }
+
+    /**
+     * 0 = off, 1 = connecting, 2 = running, 3 = failed.
+     */
+    public static int getHomeState(Context context) {
+        try {
+            Class<?> presenter = Class.forName(PRESENTER);
+            Method method = presenter.getMethod("getHomeState", Context.class);
+            Object result = method.invoke(null, context);
+            return result instanceof Integer ? (Integer) result : 0;
+        } catch (Throwable ignored) {
+            return 0;
+        }
+    }
 }
