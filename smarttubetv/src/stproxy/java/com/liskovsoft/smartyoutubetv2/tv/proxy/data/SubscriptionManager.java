@@ -182,28 +182,38 @@ public final class SubscriptionManager {
             return;
         }
 
-        MihomoCoreManager.validateConfig(temporary, (ignored, validationError) -> IO.execute(() -> {
-            if (validationError != null) {
-                temporary.delete();
-                markUpdate(profile.id, false);
-                callback.onComplete(get(profile.id), "订阅配置验证失败");
+        MihomoCoreManager.ensureStarted(context, (ignored, startupError) -> {
+            if (startupError != null) {
+                IO.execute(() -> {
+                    temporary.delete();
+                    markUpdate(profile.id, false);
+                    callback.onComplete(get(profile.id), "Mihomo 初始化失败：" + startupError);
+                });
                 return;
             }
-            try {
-                atomicReplace(temporary, config);
-                markUpdate(profile.id, true);
-                SubscriptionProfile updated = get(profile.id);
-                if (profile.id.equals(preferences.getActiveId())) {
-                    activate(profile.id, callback);
-                } else {
-                    callback.onComplete(updated, null);
+            MihomoCoreManager.validateConfig(temporary, (data, validationError) -> IO.execute(() -> {
+                if (validationError != null) {
+                    temporary.delete();
+                    markUpdate(profile.id, false);
+                    callback.onComplete(get(profile.id), "订阅配置验证失败：" + validationError);
+                    return;
                 }
-            } catch (IOException error) {
-                temporary.delete();
-                markUpdate(profile.id, false);
-                callback.onComplete(get(profile.id), "无法保存订阅配置");
-            }
-        }));
+                try {
+                    atomicReplace(temporary, config);
+                    markUpdate(profile.id, true);
+                    SubscriptionProfile updated = get(profile.id);
+                    if (profile.id.equals(preferences.getActiveId())) {
+                        activate(profile.id, callback);
+                    } else {
+                        callback.onComplete(updated, null);
+                    }
+                } catch (IOException error) {
+                    temporary.delete();
+                    markUpdate(profile.id, false);
+                    callback.onComplete(get(profile.id), "无法保存订阅配置");
+                }
+            }));
+        });
     }
 
     private synchronized void markUpdate(String id, boolean success) {

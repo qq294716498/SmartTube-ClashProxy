@@ -181,6 +181,38 @@ public final class MihomoCoreManager {
         return lastError;
     }
 
+    public static void ensureStarted(Context context, ResultCallback callback) {
+        State state = STATE.get();
+        if (state == State.RUNNING) {
+            callback.onResult("", null);
+            return;
+        }
+        if (state == State.FAILED) {
+            callback.onResult(null, lastError == null ? "Mihomo 初始化失败" : lastError);
+            return;
+        }
+        start(context.getApplicationContext());
+        pollUntilStarted(System.currentTimeMillis() + 15_000, callback);
+    }
+
+    private static void pollUntilStarted(long deadline, ResultCallback callback) {
+        State state = STATE.get();
+        if (state == State.RUNNING) {
+            callback.onResult("", null);
+            return;
+        }
+        if (state == State.FAILED) {
+            callback.onResult(null, lastError == null ? "Mihomo 初始化失败" : lastError);
+            return;
+        }
+        if (System.currentTimeMillis() >= deadline) {
+            callback.onResult(null, "Mihomo 初始化超时");
+            return;
+        }
+        new Handler(Looper.getMainLooper()).postDelayed(
+                () -> pollUntilStarted(deadline, callback), 200);
+    }
+
     public static void validateConfig(File file, ResultCallback callback) {
         invoke("validateConfig", file.getAbsolutePath(), (data, error) -> {
             String validationError = error != null ? error : emptyToNull(data);
