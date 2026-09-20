@@ -229,21 +229,24 @@ public final class SubscriptionManager {
 
     private static void download(String value, File destination) throws IOException {
         URL url = new URL(value);
-        if (!"https".equalsIgnoreCase(url.getProtocol())) {
-            throw new IOException("订阅地址必须使用 HTTPS");
+        if (!isHttpProtocol(url)) {
+            throw new IOException("订阅地址必须使用 HTTP 或 HTTPS");
         }
         HttpURLConnection connection = (HttpURLConnection) url.openConnection();
         connection.setConnectTimeout(10_000);
         connection.setReadTimeout(20_000);
         connection.setInstanceFollowRedirects(true);
-        // Many subscription panels select the output format from the client identifier.\n        // Use the Mihomo-compatible identifier so the response is Clash YAML, not a\n        // generic Base64 list or an upstream 502 response.\n        connection.setRequestProperty("User-Agent", "clash.meta");\n        connection.setRequestProperty("Accept", "application/yaml, text/yaml, text/plain, */*");
+        // Many subscription panels select the output format from the client identifier.
+        // Use the Mihomo-compatible identifier so the response is Clash YAML.
+        connection.setRequestProperty("User-Agent", "clash.meta");
+        connection.setRequestProperty("Accept", "application/yaml, text/yaml, text/plain, */*");
         try {
             int status = connection.getResponseCode();
             if (status < 200 || status >= 300) {
                 throw new IOException("订阅服务器返回 " + status);
             }
-            if (!"https".equalsIgnoreCase(connection.getURL().getProtocol())) {
-                throw new IOException("拒绝不安全的订阅重定向");
+            if (!isHttpProtocol(connection.getURL())) {
+                throw new IOException("订阅重定向仅支持 HTTP 或 HTTPS");
             }
             int total = 0;
             try (BufferedInputStream input = new BufferedInputStream(connection.getInputStream());
@@ -266,6 +269,11 @@ public final class SubscriptionManager {
         } finally {
             connection.disconnect();
         }
+    }
+
+    private static boolean isHttpProtocol(URL url) {
+        String protocol = url.getProtocol();
+        return "http".equalsIgnoreCase(protocol) || "https".equalsIgnoreCase(protocol);
     }
 
     private static void atomicReplace(File temporary, File config) throws IOException {

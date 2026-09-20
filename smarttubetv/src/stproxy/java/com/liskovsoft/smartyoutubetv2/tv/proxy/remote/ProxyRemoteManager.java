@@ -200,7 +200,7 @@ public final class ProxyRemoteManager {
         String id = values.get("id");
         if ("/save".equals(path)) {
             String url = trim(values.get("url"));
-            if (!isHttps(url)) return;
+            if (!isHttpUrl(url)) return;
             SubscriptionProfile saved = id == null || id.isEmpty()
                     ? subscriptions.add(values.get("name"), url)
                     : subscriptions.edit(id, values.get("name"), url);
@@ -241,7 +241,7 @@ public final class ProxyRemoteManager {
             html.append("</h2><form method=post action='/save'>").append(hidden())
                     .append(hidden("id", profile.id))
                     .append("<input name=name placeholder='订阅名称' value='").append(attr(profile.name)).append("'>")
-                    .append("<input name=url type=url required pattern='https://.*' placeholder='HTTPS 订阅地址' value='").append(attr(profile.url)).append("'>")
+                    .append("<input name=url type=url required pattern='https?://.*' placeholder='HTTP/HTTPS 订阅地址' value='").append(attr(profile.url)).append("'>")
                     .append("<button>保存并更新</button></form>");
             if (!profile.active) {
                 html.append(actionForm("/activate", profile.id, "设为当前订阅", "secondary"));
@@ -250,7 +250,7 @@ public final class ProxyRemoteManager {
         }
         html.append("<section class=card><h2>添加订阅</h2><form method=post action='/save'>").append(hidden())
                 .append("<input name=name placeholder='订阅名称（可留空）'>")
-                .append("<input name=url type=url required pattern='https://.*' placeholder='粘贴 HTTPS 订阅地址'>")
+                .append("<input name=url type=url required pattern='https?://.*' placeholder='粘贴 HTTP/HTTPS 订阅地址'>")
                 .append("<button>添加并更新</button></form></section>");
         if (active != null && preferences.isEnabled()) {
             NodeSnapshot snapshot = loadNodes(active);
@@ -372,10 +372,12 @@ public final class ProxyRemoteManager {
         return value.toString();
     }
 
-    private static boolean isHttps(String value) {
+    private static boolean isHttpUrl(String value) {
         try {
             URL url = new URL(value);
-            return "https".equalsIgnoreCase(url.getProtocol()) && url.getHost() != null && !url.getHost().isEmpty();
+            String protocol = url.getProtocol();
+            return ("http".equalsIgnoreCase(protocol) || "https".equalsIgnoreCase(protocol))
+                    && url.getHost() != null && !url.getHost().isEmpty();
         } catch (Exception ignored) { return false; }
     }
 
