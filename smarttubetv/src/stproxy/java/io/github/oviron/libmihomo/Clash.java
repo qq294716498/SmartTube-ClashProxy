@@ -36,6 +36,10 @@ public final class Clash {
         }
 
         try {
+            observer.onStage("正在校验 JNI 回调接口");
+            verifyJniCallbackContract();
+            observer.onStage("JNI 回调接口校验成功");
+
             observer.onStage("正在加载 libclash.so");
             System.load(resolveLibrary(nativeLibraryDirectory, "libclash.so"));
             observer.onStage("libclash.so 加载成功");
@@ -80,6 +84,17 @@ public final class Clash {
             return;
         }
         throw new IllegalStateException("Mihomo JNI bridge is not loaded", initFailure);
+    }
+
+    private static void verifyJniCallbackContract() throws NoSuchMethodException {
+        TunInterface.class.getMethod("protect", int.class);
+        TunInterface.class.getMethod(
+                "resolverProcess",
+                int.class,
+                String.class,
+                String.class,
+                int.class);
+        InvokeInterface.class.getMethod("onResult", String.class);
     }
 
     private static String resolveLibrary(String directory, String name) {
