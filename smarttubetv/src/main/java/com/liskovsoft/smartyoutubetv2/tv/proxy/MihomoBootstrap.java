@@ -3,6 +3,7 @@ package com.liskovsoft.smartyoutubetv2.tv.proxy;
 import android.content.Context;
 import android.util.Log;
 
+import com.liskovsoft.sharedutils.locale.LocaleUpdater;
 import com.liskovsoft.smartyoutubetv2.tv.BuildConfig;
 
 import java.lang.reflect.Method;
@@ -24,6 +25,16 @@ public final class MihomoBootstrap {
     public static void start(Context context) {
         if (!BuildConfig.MIHOMO_EMBEDDED) {
             return;
+        }
+
+        // 优兔喵视频是自用简体中文版。只固定 stproxy 风味，
+        // 不改变上游普通版和测试版的多语言行为。
+        LocaleUpdater locale = new LocaleUpdater(context);
+        if (!"zh_CN".equals(locale.getPreferredLanguage())) {
+            locale.setPreferredLanguage("zh_CN");
+        }
+        if (!"CN".equals(locale.getPreferredCountry())) {
+            locale.setPreferredCountry("CN");
         }
 
         try {
