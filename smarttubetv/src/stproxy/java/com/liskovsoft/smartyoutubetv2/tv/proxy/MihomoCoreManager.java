@@ -5,6 +5,8 @@ import android.content.Context;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.MediaStore;
 import android.util.Log;
 
@@ -104,7 +106,12 @@ public final class MihomoCoreManager {
         }
         STATE.set(State.STARTING);
         recordStage(appContext, "开始初始化");
-        EXECUTOR.execute(() -> startInternal(appContext));
+        Runnable initializer = () -> startInternal(appContext);
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            initializer.run();
+        } else {
+            new Handler(Looper.getMainLooper()).post(initializer);
+        }
     }
 
     public static String getStartupDiagnostic(Context context) {
@@ -226,8 +233,9 @@ public final class MihomoCoreManager {
             File config = new File(home, CONFIG_FILE);
             writeBootstrapConfigIfMissing(config);
 
-            recordStage(context, "正在加载 Mihomo native 库");
-            Clash.INSTANCE.load(context.getApplicationInfo().nativeLibraryDir);
+            recordStage(context, "准备在 Android 主线程加载 native 库");
+            Clash.INSTANCE.load(context.getApplicationInfo().nativeLibraryDir,
+                    stage -> recordStage(context, stage));
             if (!Clash.INSTANCE.isLoaded()) {
                 throw new IllegalStateException("libmihomo native libraries failed to load");
             }
