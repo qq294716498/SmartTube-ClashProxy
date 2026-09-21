@@ -153,6 +153,7 @@ public final class ProxyRuntimeCoordinator {
             // is in flight. Never publish a route whose subscription no longer exists.
             MihomoCoreManager.rejectRuntime("订阅已删除，切换已取消", (data, rollbackError) -> MAIN.post(() -> {
                 busy = false;
+                if (!valid(app, ticket)) { callback.onComplete("操作已取消"); return; }
                 routingReady = false;
                 lastError = ProxyErrors.redact(rollbackError);
                 EmbeddedProxyStartup.failed(lastError);
@@ -170,14 +171,18 @@ public final class ProxyRuntimeCoordinator {
         if (!valid(app, ticket)) { busy = false; callback.onComplete("操作已取消"); return; }
         lastError = ProxyErrors.redact(error);
         if (error == null) {
-            MihomoCoreManager.acceptRuntime();
             activeRuntimeId = profile.id;
             routeThroughLocalProxy(app);
             // Invalidate retained API/media pools before closing the core's old sockets.
             EmbeddedProxyRoute.refresh();
             verifyRoute(() -> valid(app, ticket), verifyError -> {
+                if (!valid(app, ticket)) { busy = false; callback.onComplete("操作已取消"); return; }
+                if (new SubscriptionManager(app).get(profile.id) == null) {
+                    finish(app, ticket, profile, "订阅已删除，切换已取消", false, callback);
+                    return;
+                }
+                MihomoCoreManager.acceptRuntime();
                 busy = false;
-                if (!valid(app, ticket)) { callback.onComplete("操作已取消"); return; }
                 // Configuration is usable by the settings page even if this node is offline.
                 // Home uses EmbeddedProxyStartup.READY, which requires a successful probe.
                 routingReady = true;

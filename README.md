@@ -1,50 +1,164 @@
-# 优兔喵视频
+# 优兔喵视频 · SmartTube Clash Proxy
 
-优兔喵视频是一款面向安卓电视和电视盒子的在线视频客户端，在大屏遥控器操作体验基础上集成了内置网络代理功能。
+面向 Android TV 和电视盒子的 **SmartTube + Clash/Mihomo 扩展版**：保留大屏视频浏览与播放体验，把订阅、节点选择、延迟测试和手机扫码管理放进电视端。
+
+[![Build SmartTube Proxy](https://github.com/qq294716498/SmartTube-ClashProxy/actions/workflows/proxy-build.yml/badge.svg)](https://github.com/qq294716498/SmartTube-ClashProxy/actions/workflows/proxy-build.yml)
+[![Android 5.0+](https://img.shields.io/badge/Android-5.0%2B-3DDC84)](#设备要求)
+[上游来源与许可](THIRD_PARTY_NOTICES.md)
+
+> 本项目是在 [SmartTube](https://github.com/yuliskov/SmartTube) 基础上的第三方修改版，代理能力来自 Clash 系的 [Mihomo](https://github.com/MetaCubeX/mihomo)，通过 [libmihomo-android](https://github.com/oviron/libmihomo-android) 接入。不是上述项目的官方发行版，也不隶属于 YouTube 或 Google。不提供视频源、订阅服务或内置节点。
+
+## 界面预览
+
+### 视频首页
+
+![SmartTube 上游首页界面](images/browse_home.png)
+
+上图为仓库保留的 **SmartTube 上游首页截图**，展示基础电视浏览界面；优兔喵视频的中文名称、品牌图标及首页代理入口与图中不同。
+
+### Clash 代理中心
+
+![Clash 代理中心界面示意，非实机截图](docs/images/clash-center-preview.svg)
+
+上图依据当前 `ProxySettingsPresenter` 的双栏布局、配色和按钮绘制，**是界面示意，不是实机截图**；节点名和延迟均为示例数据。实际界面提供连接与节点、订阅管理、检测与日志、手机扫码管理四个入口。
+
+### 视频播放
+
+![SmartTube 上游视频播放界面](images/video.png)
+
+上图同样来自仓库保留的上游截图。欢迎通过 PR 补充已隐藏订阅地址、二维码密钥及账号信息的本项目实机图，见[截图说明](docs/screenshots.md)。
 
 ## 主要功能
 
-- 适配电视遥控器的首页、搜索、播放和设置界面
-- 首页顶部直接进入网络代理
-- 支持添加和管理多个订阅
-- 支持手机扫码管理订阅和节点
-- 支持切换订阅与节点
-- 支持节点延迟测试
-- 支持本地代理状态检测
-- 支持导出初始化诊断日志
-- 代理仅供本应用内部网络请求使用
+- **电视浏览与播放**：首页、搜索、频道、订阅、历史记录及播放器，支持遥控器方向键操作。
+- **内置代理**：应用内部 HTTP 代理，恢复上次使用的订阅及节点，无需手动填写本地端口。
+- **首页启动等待**：开启内置代理时，首页等待本地订阅和节点恢复、旧连接清理、新的 YouTube 连通测速；通过后自动加载。
+- **订阅管理**：添加、更新、切换和删除多个 Clash YAML 订阅；更新失败保留上次有效配置。
+- **节点管理**：选择节点或订阅提供的自动组，全部测延迟、测试选中节点、停止测试、按延迟排序。
+- **手机扫码管理**：在同一局域网通过手机浏览器输入订阅地址、管理订阅与节点。
+- **故障诊断**：本地代理、YouTube 和视频域名检测，以及初始化诊断日志导出。
 
-## 手机扫码管理
+## 设备要求
 
-在电视的网络代理页面选择“手机扫码管理”，电视会显示二维码。手机与电视连接同一局域网后扫码，即可在手机浏览器中添加、编辑、删除订阅并选择节点。管理地址包含随机访问密钥，只在当前应用进程和局域网内有效。
+| 项目 | 要求 |
+| --- | --- |
+| 系统 | Android 5.0 / API 21 及以上；主要面向 Android TV / 电视盒子 |
+| 处理器 | `arm64-v8a` 或 `armeabi-v7a` |
+| 输入 | 电视遥控器；手机可辅助输入订阅 |
+| 网络 | 可用的网络连接；启用代理时需自行提供兼容的订阅及节点 |
 
-## 使用方法
+当前代理版不提供可运行的 x86 / x86_64 安装包。16 KB 内存页设备的安装兼容性尚未验证；不能仅因核心支持就认定整个 APK 支持。
 
-一、安装与设备架构匹配的安装包。多数新款安卓电视、电视盒子和手机使用六十四位版本。
+## 下载与安装
 
-二、打开首页，在顶部搜索和头像旁选择网络代理图标。
+1. 打开 [GitHub Actions](https://github.com/qq294716498/SmartTube-ClashProxy/actions/workflows/proxy-build.yml)，选择 **main 分支最近一次成功**的构建。
+2. 在 Artifacts 中下载适合设备的包，解压得到 APK 和 SHA-256 校验文件：
 
-三、进入订阅管理，添加有效的安全订阅地址并完成更新。
+   | 构建产物 | 用途 |
+   | --- | --- |
+   | `SmartTube-Proxy-arm64` | 64 位 ARM 设备 |
+   | `SmartTube-Proxy-armeabi-v7a` | 32 位 ARM 设备 |
+   | `SmartTube-Proxy-universal` | 同时包含两种 ARM 架构，体积较大 |
 
-四、选择订阅和节点后，打开“使用内置代理”。
+3. 将 APK 传到电视并安装。下载 Actions 产物通常需要登录 GitHub；当前产物保留 **7 天**，过期后需重新构建。
 
-五、如果启动异常，可在代理页面执行初始化自检并导出诊断日志。
+当前构建为 `stproxyDebug`，不是固定正式签名的稳定发行渠道。不同构建环境的调试签名可能不同；遇到签名冲突时不要直接卸载以免丢失本地订阅，优先用一致的签名重新构建。开发者可使用本地签名配置，但不得提交密钥或密码。
 
-## 构建说明
+## 首次使用
 
-仓库提交后会自动执行代码检查和代理版安装包构建，并分别生成六十四位、三十二位与通用安装包。
+1. 打开优兔喵视频，从首页顶部代理入口或设置进入 **Clash 代理中心**。
+2. 进入 **订阅管理**，添加订阅名称及 HTTP / HTTPS 地址，完成更新。建议使用 HTTPS；订阅需返回兼容的 Clash YAML。
+3. 选择要使用的订阅，开启内置代理，等待节点恢复和连通检测。
+4. 在 **连接与节点** 中选择节点；必要时使用“测选中节点”或“全部测延迟”。
+5. 返回首页，连通验证成功后会自动加载视频列表。
 
-构建流程会下载经过校验的内置代理核心，并核对文件摘要后再打包。
+普通网页、单个分享链接和纯 Base64 节点列表不等同于 Clash YAML。订阅中的外部控制器、TUN、监听端口和分流规则不会原样启用：本项目采用应用内部全局代理，并限制本地监听。
 
-## 隐私与安全
+### 手机扫码管理
 
-- 订阅地址和配置仅保存在本机应用目录
-- 诊断日志会隐藏完整订阅地址
-- 本地视频代理仅监听本机回环地址
-- 手机管理服务仅在用户主动打开后于局域网临时运行
-- 手机管理地址使用随机访问密钥，重启应用后自动失效
-- 不默认启用虚拟专用网络模式
+电视与手机连接同一局域网，在代理中心选择 **手机扫码管理**，使用手机扫描二维码。管理页面可添加和更新订阅、选择订阅与节点。入口为临时局域网服务，带随机访问密钥，约 15 分钟到期；不要公开二维码、完整管理地址或订阅链接。
 
-## 开源说明
+### 启动时如何连接
 
-本项目基于开源电视客户端继续开发，并集成开源代理核心。使用、修改和分发时应遵守仓库许可文件及相关上游项目的开源许可。
+```text
+打开 APP
+  ├─ 内置代理关闭 → 首页按普通网络方式加载
+  └─ 内置代理开启
+       → 检查本地有效订阅
+       → 启动核心、恢复订阅与节点
+       → 清理旧 API / 媒体连接及核心连接
+       → 当前 GLOBAL 出口进行新的 YouTube HTTPS 连通测速
+       ├─ 通过 → 通知首页，自动加载
+       └─ 失败 → 显示原因，可进入代理设置重试或换节点
+```
+
+启动检测只测试当前恢复的出口，不对所有节点做全量测速，也不把之前缓存的延迟当作本次成功。页面等待不会锁住菜单；等待超过 60 秒会提供设置入口，后台随后成功仍可自动恢复首页。离开首页或销毁页面后不抢焦点、不刷新其他分类。
+
+**延迟测试不是下载速度测试**，也不能保证所有视频域名、地区内容和实际带宽都可用。没有有效订阅或当前节点不可用时，不会把代理伪装成已连接。
+
+## 常见问题
+
+**重新打开后首页空白或提示连接失败？** 先确认已安装包含启动等待修复的构建，然后在代理中心查看状态。确认订阅更新成功、节点可用；可用“检测与日志”重新连接或检查 YouTube 连通性。请记录构建提交和完整错误，避免只提供截断的异常。
+
+**测速成功但播放卡顿？** 节点延迟、视频域名可达性和实际带宽是不同指标。尝试另一个节点，并执行视频域名检测。
+
+**手机打不开管理页面？** 检查是否同一局域网、路由器是否隔离客户端，以及二维码是否过期；在电视重新打开手机管理入口。
+
+**代理关闭后会怎样？** 本软件恢复直连；关闭代理不等于断网。
+
+**会影响电视上的其他 APP 吗？** 不会作为系统 VPN 接管其他 APP。外部浏览器、系统登录页面等独立进程不在本软件代理覆盖范围内。
+
+## 从源码构建
+
+推荐使用仓库提供的 GitHub Actions，或 Linux / WSL 环境。基线工具链为 **JDK 17、Gradle 7.5、AGP 7.4.2、Android SDK 34、Build Tools 30.0.3、NDK 21.0.6113669**。SDK 路径通过环境变量或未提交的 `local.properties` 配置。
+
+```bash
+git clone --recurse-submodules https://github.com/qq294716498/SmartTube-ClashProxy.git
+cd SmartTube-ClashProxy
+git submodule update --init --recursive
+
+# 下载固定版本核心，校验 SHA-256 并提取 ARM 原生库
+bash scripts/fetch-libmihomo.sh
+chmod +x gradlew
+
+./gradlew lintStproxyDebug
+./gradlew :smarttubetv:testStproxyDebugUnitTest --tests 'com.liskovsoft.smartyoutubetv2.tv.proxy.*'
+./gradlew assembleStproxyDebug
+```
+
+输出目录：`smarttubetv/build/outputs/apk/stproxy/debug/`。原生依赖固定为 `libmihomo-android v0.3.3`（内含 `mihomo v1.19.30`）；下载脚本校验的 SHA-256 为：
+
+```text
+3bccc9020926b0b7bf1fd09553b41e4678c80cedc5cbe61d90a78fe4b71aca76
+```
+
+为兼容现有构建工具，代理版使用 Java 8 JNI 接口封装，并从上游 AAR 提取原生库。普通 SmartTube 构建风味不打包 Mihomo。自动检查包括 Lint、代理单元测试和 APK 构建；真实电视启动、遥控器交互和播放仍须实机验收。
+
+## 项目结构
+
+| 路径 | 内容 |
+| --- | --- |
+| `common/` | 浏览、播放器、共享代理路由及首页启动状态 |
+| `smarttubetv/src/main/` | Android TV 页面及启动入口 |
+| `smarttubetv/src/stproxy/` | Mihomo 核心、订阅、节点、代理中心及手机管理 |
+| `smarttubetv/src/testStproxy/` | 代理配置、启动顺序和脱敏回归测试 |
+| `MediaServiceCore/`、`SharedModules/` | 固定提交的上游子模块 |
+| `scripts/fetch-libmihomo.sh` | 原生核心下载与校验 |
+| `docs/` | 实现记录、验收说明及界面素材 |
+
+## 上游来源、许可与致谢
+
+| 来源 | 本项目使用方式 | 许可 |
+| --- | --- | --- |
+| [yuliskov/SmartTube](https://github.com/yuliskov/SmartTube/tree/c75606267ec948462818041879e3b7110fd918bc) | 32.53 基线：电视界面、浏览与播放器；在其上增加内置代理等功能 | MIT，保留原作者声明 |
+| [MetaCubeX/mihomo](https://github.com/MetaCubeX/mihomo/tree/v1.19.30) | Clash 系代理核心 | GPL-3.0 |
+| [oviron/libmihomo-android](https://github.com/oviron/libmihomo-android/tree/v0.3.3) | Android 原生库与 JNI 桥接，Java 兼容封装参考其接口 | GPL-3.0 |
+| [MediaServiceCore](https://github.com/yuliskov/MediaServiceCore)、[SharedModules](https://github.com/yuliskov/SharedModules) | 上游媒体服务与共享模块 | 以各子模块许可证为准 |
+
+根目录 [LICENSE](LICENSE) 保留 SmartTube 原有的 MIT 条款及版权声明，本次不变更仓库许可。**Mihomo 与 libmihomo-android 各自采用 GPL-3.0**，不能把根目录 MIT 条款当作替代这些组件许可证的授权。对应源码版本、原生依赖来源与各自许可链接见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)；分发包含这些组件的 APK 时需同时遵守适用的上游条款。
+
+感谢 SmartTube、Mihomo/Clash 社区、libmihomo-android 及所有上游依赖的维护者。
+
+## 反馈与贡献
+
+欢迎通过 [Issues](https://github.com/qq294716498/SmartTube-ClashProxy/issues) 反馈，或提交 PR。问题报告请包含设备型号、Android 版本、APK 架构、构建提交、复现步骤和脱敏日志；不要提交订阅令牌、节点密码、私钥、二维码密钥或账号信息。新增代码请验证代理关闭、订阅缺失、测速失败和连续重启等情况。

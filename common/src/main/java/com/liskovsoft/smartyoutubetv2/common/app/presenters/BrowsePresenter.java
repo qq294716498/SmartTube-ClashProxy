@@ -664,11 +664,10 @@ public class BrowsePresenter extends BasePresenter<BrowseView> implements Sectio
                 || status.state == EmbeddedProxyStartup.State.READY) return false;
         mWaitingForProxy = true;
         EmbeddedProxyStartup.addListener(mProxyStartupChanged);
-        getView().clearSection(mCurrentSection);
         if (status.state == EmbeddedProxyStartup.State.FAILED) {
             showProxyError(status.message);
         } else {
-            getView().showProgressBar(true);
+            showProxyLoading();
             // Bound the visible wait, while retaining the ready notification for recovery.
             Utils.postDelayed(mProxyStartupTimeout, 60_000);
         }
@@ -687,8 +686,7 @@ public class BrowsePresenter extends BasePresenter<BrowseView> implements Sectio
             Utils.removeCallbacks(mProxyStartupTimeout);
             showProxyError(status.message);
         } else {
-            getView().clearSection(mCurrentSection);
-            getView().showProgressBar(true);
+            showProxyLoading();
             Utils.removeCallbacks(mProxyStartupTimeout);
             Utils.postDelayed(mProxyStartupTimeout, 60_000);
         }
@@ -698,6 +696,13 @@ public class BrowsePresenter extends BasePresenter<BrowseView> implements Sectio
         getView().showProgressBar(false);
         getView().showError(new ProxyConnectionError(getContext(), message != null
                 ? message : "代理连接失败，请检查订阅或切换节点。"));
+    }
+
+    private void showProxyLoading() {
+        VideoGroup empty = VideoGroup.from(mCurrentSection);
+        empty.setAction(VideoGroup.ACTION_REPLACE);
+        getView().updateSection(empty); // Restore content if the previous attempt showed an error.
+        getView().showProgressBar(true);
     }
 
     private void stopWaitingForProxy() {
