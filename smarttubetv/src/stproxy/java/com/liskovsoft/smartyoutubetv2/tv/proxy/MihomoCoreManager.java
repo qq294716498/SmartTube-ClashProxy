@@ -175,6 +175,16 @@ public final class MihomoCoreManager {
         }
     }
 
+    /** Returns a privacy-safe report for the token-protected phone diagnostics page. */
+    public static String getDiagnosticReport(Context context) {
+        try {
+            return buildDiagnosticReport(context.getApplicationContext());
+        } catch (Throwable error) {
+            return "诊断报告生成失败：" + ProxyErrors.redact(error.getClass().getSimpleName()
+                    + ": " + error.getMessage());
+        }
+    }
+
     public static State getState() {
         return STATE.get();
     }
@@ -646,7 +656,7 @@ public final class MihomoCoreManager {
         } else {
             report.append("No timeline recorded.\n");
         }
-        return report.toString();
+        return ProxyErrors.redactAll(report.toString());
     }
 
     private static String stackTrace(Throwable error) {
