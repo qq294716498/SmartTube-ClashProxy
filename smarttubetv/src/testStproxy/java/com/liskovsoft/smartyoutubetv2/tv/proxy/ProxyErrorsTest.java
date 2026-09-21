@@ -16,4 +16,12 @@ public class ProxyErrorsTest {
         assertNull(ProxyErrors.redact(null));
         assertTrue(ProxyErrors.redact(new String(new char[1000]).replace('\0', 'a')).length() <= 601);
     }
+    @Test public void redactsFullDiagnosticWithoutTruncatingTimeline() {
+        String timeline = new String(new char[900]).replace('\0', 'a');
+        String safe = ProxyErrors.redactAll(timeline + " https://example.test/config?token=abc password=hidden uuid:1234");
+        assertTrue(safe.length() > 900);
+        assertFalse(safe.contains("example.test"));
+        assertFalse(safe.contains("hidden"));
+        assertFalse(safe.contains("1234"));
+    }
 }
