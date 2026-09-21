@@ -2,6 +2,22 @@
 
 优兔喵视频是一款面向安卓电视和电视盒子的在线视频客户端，在大屏遥控器操作体验基础上集成了内置网络代理功能。
 
+## 下载与安装
+
+**[进入 Releases 下载](https://github.com/qq294716498/SmartTube-ClashProxy/releases)** · **[直接下载通用 APK](https://github.com/qq294716498/SmartTube-ClashProxy/releases/download/v32.53-proxy.1-beta/SmartTube_proxy_32.53_universal.apk)**
+
+展开版本下方的 **Assets**，下载以 `.apk` 结尾的安装包。公开发布的附件无需登录 GitHub 即可下载，也不受 Actions 构建产物 7 天保留期限制。
+
+- `SmartTube_proxy_32.53_universal.apk`：通用 ARM 安装包，同时支持 32 位和 64 位 ARM 电视/盒子，不确定架构时选它。
+- `SHA256SUMS-universal.txt`：用于核对安装包的 SHA-256 校验值。
+- `Source code (zip / tar.gz)`：源码压缩包，不能直接安装到电视。
+
+将 APK 下载后通过 U 盘或局域网传到电视，用文件管理器打开安装；系统提示时允许该文件管理器安装应用。需要 Android 5.0 及以上，不支持 x86 / x86_64。
+
+当前公开包标为 **Pre-release（测试版）**，包含首页等待订阅、节点恢复、连接清理和测速后自动加载的修复。节点不可用时显示设置入口，可切换节点。该包来自 PR #2 的已通过检查版本；完整修复尚未合并主分支，电视实机验证仍待完成。
+
+安装包采用 `stproxyDebug` 调试签名，可能无法覆盖签名不同的旧版本；遇到冲突请先保留/备份订阅配置，不要直接卸载清除数据。不提供内置订阅或节点。
+
 ## 主要功能
 
 - 适配电视遥控器的首页、搜索、播放和设置界面
