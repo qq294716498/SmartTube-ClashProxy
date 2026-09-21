@@ -70,6 +70,7 @@ public final class EmbeddedProxyRoute {
         if (installed || !isSupported(context)) return;
         enabled = context.getSharedPreferences("smarttube_embedded_proxy", Context.MODE_PRIVATE)
                 .getBoolean("enabled", false);
+        if (enabled) EmbeddedProxyStartup.connecting();
         ProxySelector.setDefault(SELECTOR);
         installed = true;
     }

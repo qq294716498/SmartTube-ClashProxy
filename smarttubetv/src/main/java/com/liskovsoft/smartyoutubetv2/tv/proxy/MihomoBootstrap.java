@@ -44,6 +44,8 @@ public final class MihomoBootstrap {
             Method start = manager.getMethod("startIfEnabled", Context.class);
             start.invoke(null, context.getApplicationContext());
         } catch (Throwable error) {
+            com.liskovsoft.smartyoutubetv2.common.proxy.EmbeddedProxyStartup.failed(
+                    "内置代理启动失败，请打开网络代理设置查看诊断。");
             // Proxy startup must never crash SmartTube. The diagnostics UI will
             // surface this state in a later phase without exposing user secrets.
             Log.e(TAG, "Embedded Mihomo startup failed", error);

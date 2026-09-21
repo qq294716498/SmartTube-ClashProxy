@@ -7,6 +7,7 @@ import com.liskovsoft.sharedutils.okhttp.OkHttpManager;
 import com.liskovsoft.smartyoutubetv2.common.prefs.GeneralData;
 import com.liskovsoft.smartyoutubetv2.common.prefs.PlayerTweaksData;
 import com.liskovsoft.smartyoutubetv2.common.proxy.EmbeddedProxyRoute;
+import com.liskovsoft.smartyoutubetv2.common.proxy.EmbeddedProxyStartup;
 import com.liskovsoft.smartyoutubetv2.common.proxy.PasswdInetSocketAddress;
 import com.liskovsoft.smartyoutubetv2.common.proxy.Proxy;
 import com.liskovsoft.smartyoutubetv2.common.proxy.ProxyManager;
@@ -67,6 +68,7 @@ public final class ProxyRuntimeCoordinator {
             if (!hasConfig(active)) {
                 lastError = "请先添加并更新一个可用订阅";
                 routingReady = false;
+                EmbeddedProxyStartup.failed(lastError);
                 callback.onComplete(lastError); return;
             }
             prefs.setEnabled(true);
@@ -87,6 +89,7 @@ public final class ProxyRuntimeCoordinator {
         boolean wasReady = routingReady;
         routingReady = false;
         lastError = null;
+        EmbeddedProxyStartup.connecting();
         long ticket = ++request;
         epoch++;
         Map<String, String> selected = new HashMap<>();
@@ -150,29 +153,73 @@ public final class ProxyRuntimeCoordinator {
             // is in flight. Never publish a route whose subscription no longer exists.
             MihomoCoreManager.rejectRuntime("订阅已删除，切换已取消", (data, rollbackError) -> MAIN.post(() -> {
                 busy = false;
+                if (!valid(app, ticket)) { callback.onComplete("操作已取消"); return; }
                 routingReady = false;
                 lastError = ProxyErrors.redact(rollbackError);
+                EmbeddedProxyStartup.failed(lastError);
                 callback.onComplete(lastError);
             }));
             return;
         }
-        busy = false;
         if (ticket == request && new SubscriptionManager(app).get(profile.id) == null) {
+            busy = false;
             new ProxyPreferences(app).setEnabled(false);
             applyDirect(app);
             callback.onComplete("目标订阅已删除，代理已关闭");
             return;
         }
-        if (!valid(app, ticket)) { callback.onComplete("操作已取消"); return; }
+        if (!valid(app, ticket)) { busy = false; callback.onComplete("操作已取消"); return; }
         lastError = ProxyErrors.redact(error);
-        routingReady = error == null || (previousReady && MihomoCoreManager.getState() == MihomoCoreManager.State.RUNNING);
         if (error == null) {
-            MihomoCoreManager.acceptRuntime();
             activeRuntimeId = profile.id;
             routeThroughLocalProxy(app);
-            MihomoCoreManager.closeConnections((ignored, closeError) -> { });
+            // Invalidate retained API/media pools before closing the core's old sockets.
+            EmbeddedProxyRoute.refresh();
+            verifyRoute(() -> valid(app, ticket), verifyError -> {
+                if (!valid(app, ticket)) { busy = false; callback.onComplete("操作已取消"); return; }
+                if (new SubscriptionManager(app).get(profile.id) == null) {
+                    finish(app, ticket, profile, "订阅已删除，切换已取消", false, callback);
+                    return;
+                }
+                MihomoCoreManager.acceptRuntime();
+                busy = false;
+                // Configuration is usable by the settings page even if this node is offline.
+                // Home uses EmbeddedProxyStartup.READY, which requires a successful probe.
+                routingReady = true;
+                lastError = verifyError;
+                if (verifyError == null) EmbeddedProxyStartup.ready();
+                else EmbeddedProxyStartup.failed(verifyError);
+                callback.onComplete(verifyError);
+            });
+            return;
         }
+        busy = false;
+        routingReady = previousReady && MihomoCoreManager.getState() == MihomoCoreManager.State.RUNNING;
+        EmbeddedProxyStartup.failed(lastError);
         callback.onComplete(lastError);
+    }
+
+    private static void verifyRoute(ProxyReadinessCheck.Current current, Callback callback) {
+        ProxyReadinessCheck.run(current,
+                result -> MihomoCoreManager.closeConnections((data, error) ->
+                        MAIN.post(() -> result.complete(data, error))),
+                result -> MihomoCoreManager.testDelay("GLOBAL", "https://www.youtube.com/generate_204", 5_000,
+                        (data, error) -> MAIN.post(() -> result.complete(data, error))),
+                (data, error) -> callback.onComplete(error));
+    }
+
+    /** Called while node switching remains locked; readiness follows cleanup and a fresh test. */
+    public static void verifyNodeSwitch(long expectedEpoch, Callback callback) {
+        EmbeddedProxyStartup.connecting();
+        verifyRoute(() -> epoch == expectedEpoch && EmbeddedProxyRoute.isEnabled(), error -> {
+            if (epoch != expectedEpoch || !EmbeddedProxyRoute.isEnabled()) {
+                callback.onComplete("操作已取消，代理状态已经变化"); return;
+            }
+            lastError = error;
+            if (error == null) EmbeddedProxyStartup.ready();
+            else EmbeddedProxyStartup.failed(error);
+            callback.onComplete(error);
+        });
     }
 
     public static void applyDirect(Context context) {
@@ -185,6 +232,7 @@ public final class ProxyRuntimeCoordinator {
         manager.configureSystemProxy();
         GeneralData.instance(app).setProxyEnabled(false);
         OkHttpManager.unhold();
+        EmbeddedProxyStartup.off();
     }
 
     private static boolean hasConfig(SubscriptionProfile profile) {
