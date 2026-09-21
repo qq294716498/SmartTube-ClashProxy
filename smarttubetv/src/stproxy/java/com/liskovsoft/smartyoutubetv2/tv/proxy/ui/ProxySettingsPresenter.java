@@ -423,6 +423,7 @@ public final class ProxySettingsPresenter {
             MihomoCoreManager.ensureStarted(context, (data, error) -> ui(() ->
                     say(error == null ? "核心已就绪。核心就绪不等于 YouTube 已连通。" : error)));
         }));
+        content.addView(button("手机扫码查看诊断日志", () -> ProxyRemoteManager.showDiagnostics(context)));
         content.addView(button("导出诊断日志", () -> {
             say("正在导出日志…");
             new Thread(() -> {
