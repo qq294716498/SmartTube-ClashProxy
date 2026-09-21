@@ -99,8 +99,8 @@ public final class ProxyNodeManager {
         }
         long epoch = ProxyRuntimeCoordinator.getEpoch();
         MihomoCoreManager.changeProxy("GLOBAL", node.runtimeName, (ignored, error) -> MAIN.post(() -> {
-            SWITCHING.set(false);
             if (epoch != ProxyRuntimeCoordinator.getEpoch() || !EmbeddedProxyRoute.isEnabled()) {
+                SWITCHING.set(false);
                 callback.onResult("操作已取消，代理状态已经变化"); return;
             }
             if (error == null) {
@@ -109,8 +109,13 @@ public final class ProxyNodeManager {
                         node.automatic ? SubscriptionProfile.MODE_AUTO : SubscriptionProfile.MODE_MANUAL,
                         nodeCount);
                 EmbeddedProxyRoute.refresh();
-                MihomoCoreManager.closeConnections((data, closeError) -> { });
+                ProxyRuntimeCoordinator.verifyNodeSwitch(epoch, verifyError -> {
+                    SWITCHING.set(false);
+                    callback.onResult(verifyError);
+                });
+                return;
             }
+            SWITCHING.set(false);
             callback.onResult(error);
         }));
         });

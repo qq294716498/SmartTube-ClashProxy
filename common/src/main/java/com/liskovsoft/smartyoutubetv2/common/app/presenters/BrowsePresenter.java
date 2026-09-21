@@ -23,6 +23,8 @@ import com.liskovsoft.smartyoutubetv2.common.app.models.data.VideoGroup;
 import com.liskovsoft.smartyoutubetv2.common.app.models.errors.CategoryEmptyError;
 import com.liskovsoft.smartyoutubetv2.common.app.models.errors.ErrorFragmentData;
 import com.liskovsoft.smartyoutubetv2.common.app.models.errors.PasswordError;
+import com.liskovsoft.smartyoutubetv2.common.app.models.errors.ProxyConnectionError;
+import com.liskovsoft.smartyoutubetv2.common.proxy.EmbeddedProxyStartup;
 import com.liskovsoft.smartyoutubetv2.common.app.models.errors.SignInError;
 import com.liskovsoft.smartyoutubetv2.common.app.models.playback.service.VideoStateService;
 import com.liskovsoft.smartyoutubetv2.common.app.models.playback.service.VideoStateService.State;
@@ -72,6 +74,13 @@ public class BrowsePresenter extends BasePresenter<BrowseView> implements Sectio
     private final BrowseProcessorManager mBrowseProcessor;
     private final List<Disposable> mActions;
     private final Runnable mRefreshSection = this::refresh;
+    private boolean mWaitingForProxy;
+    private final Runnable mProxyStartupChanged = () -> Utils.post(this::onProxyStartupChanged);
+    private final Runnable mProxyStartupTimeout = () -> {
+        if (mWaitingForProxy && getView() != null && isHomeSection()) {
+            showProxyError("连接准备超时，请在网络代理设置中重试或切换节点。");
+        }
+    };
     private BrowseSection mCurrentSection;
     private Video mCurrentVideo;
     private long mLastUpdateTimeMs = -1;
@@ -109,6 +118,7 @@ public class BrowsePresenter extends BasePresenter<BrowseView> implements Sectio
     }
 
     public static void unhold() {
+        if (sInstance != null) sInstance.stopWaitingForProxy();
         sInstance = null;
     }
 
@@ -407,6 +417,7 @@ public class BrowsePresenter extends BasePresenter<BrowseView> implements Sectio
 
     @Override
     public void onViewDestroyed() {
+        stopWaitingForProxy();
         super.onViewDestroyed();
         disposeActions();
         saveSelectedItems();
@@ -635,13 +646,64 @@ public class BrowsePresenter extends BasePresenter<BrowseView> implements Sectio
 
     private void updateCurrentSection() {
         disposeActions();
+        stopWaitingForProxy();
 
         if (getView() == null || mCurrentSection == null) {
             return;
         }
 
         Log.d(TAG, "Update section %s", mCurrentSection.getTitle());
+        if (waitForProxyIfNeeded()) return;
         updateSection(mCurrentSection);
+    }
+
+    private boolean waitForProxyIfNeeded() {
+        if (!isHomeSection()) return false;
+        EmbeddedProxyStartup.Status status = EmbeddedProxyStartup.getStatus();
+        if (status.state == EmbeddedProxyStartup.State.OFF
+                || status.state == EmbeddedProxyStartup.State.READY) return false;
+        mWaitingForProxy = true;
+        EmbeddedProxyStartup.addListener(mProxyStartupChanged);
+        getView().clearSection(mCurrentSection);
+        if (status.state == EmbeddedProxyStartup.State.FAILED) {
+            showProxyError(status.message);
+        } else {
+            getView().showProgressBar(true);
+            // Bound the visible wait, while retaining the ready notification for recovery.
+            Utils.postDelayed(mProxyStartupTimeout, 60_000);
+        }
+        // Re-read after registration so a readiness transition cannot be missed.
+        onProxyStartupChanged();
+        return true;
+    }
+
+    private void onProxyStartupChanged() {
+        if (!mWaitingForProxy || getView() == null || !isHomeSection()) return;
+        EmbeddedProxyStartup.Status status = EmbeddedProxyStartup.getStatus();
+        if (status.state == EmbeddedProxyStartup.State.READY
+                || status.state == EmbeddedProxyStartup.State.OFF) {
+            updateCurrentSection(); // Do not steal focus from the sidebar/settings dialog.
+        } else if (status.state == EmbeddedProxyStartup.State.FAILED) {
+            Utils.removeCallbacks(mProxyStartupTimeout);
+            showProxyError(status.message);
+        } else {
+            getView().clearSection(mCurrentSection);
+            getView().showProgressBar(true);
+            Utils.removeCallbacks(mProxyStartupTimeout);
+            Utils.postDelayed(mProxyStartupTimeout, 60_000);
+        }
+    }
+
+    private void showProxyError(String message) {
+        getView().showProgressBar(false);
+        getView().showError(new ProxyConnectionError(getContext(), message != null
+                ? message : "代理连接失败，请检查订阅或切换节点。"));
+    }
+
+    private void stopWaitingForProxy() {
+        mWaitingForProxy = false;
+        EmbeddedProxyStartup.removeListener(mProxyStartupChanged);
+        Utils.removeCallbacks(mProxyStartupTimeout);
     }
 
     private void updateSection(BrowseSection section) {
@@ -1184,6 +1246,16 @@ public class BrowsePresenter extends BasePresenter<BrowseView> implements Sectio
     private void handleLoadError(Throwable error) {
         if (getView() == null) {
             return;
+        }
+
+        if (error != null && isHomeSection()) {
+            EmbeddedProxyStartup.State state = EmbeddedProxyStartup.getStatus().state;
+            if (state == EmbeddedProxyStartup.State.CONNECTING || state == EmbeddedProxyStartup.State.FAILED) {
+                disposeActions();
+                stopWaitingForProxy();
+                waitForProxyIfNeeded();
+                return;
+            }
         }
 
         getView().showProgressBar(false);
