@@ -92,12 +92,14 @@ public final class ProxyRuntimeCoordinator {
         Map<String, String> selected = new HashMap<>();
         // Never fall back to DIRECT while restoring a missing/renamed saved node.
         selected.put("GLOBAL", "REJECT");
+        MihomoCoreManager.recordDiagnosticEvent("开始应用订阅配置");
         MihomoCoreManager.ensureStarted(app, (ignored, startError) -> MAIN.post(() -> {
             if (!valid(app, ticket)) { finish(app, ticket, profile, "操作已取消", false, callback); return; }
             if (startError != null) { finish(app, ticket, profile, startError, wasReady, callback); return; }
             MihomoCoreManager.reloadConfig(new File(profile.configPath), selected, (data, loadError) -> MAIN.post(() -> {
                 if (!valid(app, ticket)) { finish(app, ticket, profile, "操作已取消", false, callback); return; }
                 if (loadError != null) { finish(app, ticket, profile, loadError, wasReady, callback); return; }
+                MihomoCoreManager.recordDiagnosticEvent("订阅配置加载成功，准备恢复节点");
                 restoreNode(app, ticket, profile, wasReady, callback);
             }));
         }));
@@ -169,8 +171,13 @@ public final class ProxyRuntimeCoordinator {
         if (error == null) {
             MihomoCoreManager.acceptRuntime();
             activeRuntimeId = profile.id;
+            MihomoCoreManager.recordDiagnosticEvent("节点恢复成功，准备刷新应用网络");
             routeThroughLocalProxy(app);
-            MihomoCoreManager.closeConnections((ignored, closeError) -> { });
+            // Cancelling app-owned OkHttp pools is enough to move new requests to
+            // the selected route. The native close-all action is intentionally not
+            // used here: some Android TV runtimes terminate inside that JNI call.
+            EmbeddedProxyRoute.refresh();
+            MihomoCoreManager.recordDiagnosticEvent("代理路由应用成功");
         }
         callback.onComplete(lastError);
     }
