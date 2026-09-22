@@ -15,8 +15,8 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import okhttp3.Call;
+import okhttp3.ConnectionPool;
 import okhttp3.OkHttpClient;
-import okhttp3.Protocol;
 
 /** Flavor-safe media transport. Every new request observes the current route. */
 public final class EmbeddedProxyRoute {
@@ -47,7 +47,11 @@ public final class EmbeddedProxyRoute {
         synchronized (EmbeddedProxyRoute.class) {
             if (client == null) {
                 client = new OkHttpClient.Builder()
-                        .protocols(Collections.singletonList(Protocol.HTTP_1_1))
+                        // Keep OkHttp's default protocol negotiation so HTTPS video
+                        // connections through Mihomo can use HTTP/2 when supported.
+                        // Forcing HTTP/1.1 amplifies high-latency node round trips and
+                        // becomes especially visible while loading 2K/4K segments.
+                        .connectionPool(new ConnectionPool(10, 5, TimeUnit.MINUTES))
                         .proxy(enabled
                                 ? new java.net.Proxy(java.net.Proxy.Type.HTTP,
                                         new InetSocketAddress("127.0.0.1", 7890))

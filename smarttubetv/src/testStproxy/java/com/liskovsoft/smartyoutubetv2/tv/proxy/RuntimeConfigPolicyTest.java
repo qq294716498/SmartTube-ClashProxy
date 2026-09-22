@@ -15,6 +15,8 @@ public class RuntimeConfigPolicyTest {
         config.put("external-controller-unix", "/tmp/control.sock");
         config.put("listeners", Arrays.asList("untrusted"));
         config.put("authentication", Arrays.asList("user:secret"));
+        config.put("tcp-concurrent", false);
+        config.put("sniffer", new LinkedHashMap<>());
         config.put("tun", new LinkedHashMap<>());
         RuntimeConfigPolicy.sanitize(config);
         assertEquals(7890, config.get("mixed-port"));
@@ -25,6 +27,8 @@ public class RuntimeConfigPolicyTest {
         assertFalse(config.containsKey("external-controller-unix"));
         assertFalse(config.containsKey("listeners"));
         assertFalse(config.containsKey("authentication"));
+        assertEquals(true, config.get("tcp-concurrent"));
+        assertFalse(config.containsKey("sniffer"));
         assertEquals(false, ((Map<?, ?>) config.get("tun")).get("enable"));
     }
 
