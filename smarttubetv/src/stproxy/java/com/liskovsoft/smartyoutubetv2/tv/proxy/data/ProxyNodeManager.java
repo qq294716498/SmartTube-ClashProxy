@@ -1,6 +1,7 @@
 package com.liskovsoft.smartyoutubetv2.tv.proxy.data;
 
 import com.liskovsoft.smartyoutubetv2.tv.proxy.MihomoCoreManager;
+import com.liskovsoft.smartyoutubetv2.tv.proxy.ProxyErrors;
 import com.liskovsoft.smartyoutubetv2.tv.proxy.ProxyRuntimeCoordinator;
 import com.liskovsoft.smartyoutubetv2.common.proxy.EmbeddedProxyRoute;
 import android.os.Handler;
@@ -98,7 +99,9 @@ public final class ProxyNodeManager {
             callback.onResult("请先连接代理，并等待当前操作完成"); return;
         }
         long epoch = ProxyRuntimeCoordinator.getEpoch();
-        MihomoCoreManager.changeProxy("GLOBAL", node.runtimeName, (ignored, error) -> MAIN.post(() -> {
+        MihomoCoreManager.recordDiagnosticEvent(
+                "开始切换节点：" + ProxyErrors.redact(node.runtimeName));
+        MihomoCoreManager.changeProxy(group, node.runtimeName, (ignored, error) -> MAIN.post(() -> {
             SWITCHING.set(false);
             if (epoch != ProxyRuntimeCoordinator.getEpoch() || !EmbeddedProxyRoute.isEnabled()) {
                 callback.onResult("操作已取消，代理状态已经变化"); return;
@@ -109,7 +112,7 @@ public final class ProxyNodeManager {
                         node.automatic ? SubscriptionProfile.MODE_AUTO : SubscriptionProfile.MODE_MANUAL,
                         nodeCount);
                 EmbeddedProxyRoute.refresh();
-                MihomoCoreManager.closeConnections((data, closeError) -> { });
+                MihomoCoreManager.recordDiagnosticEvent("节点切换成功");
             }
             callback.onResult(error);
         }));
