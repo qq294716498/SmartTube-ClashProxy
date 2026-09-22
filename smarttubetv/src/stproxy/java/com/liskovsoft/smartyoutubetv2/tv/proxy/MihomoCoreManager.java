@@ -175,7 +175,7 @@ public final class MihomoCoreManager {
         }
     }
 
-    /** Returns a privacy-safe report for the token-protected phone diagnostics page. */
+    /** Returns a privacy-safe report for the short-lived phone management page. */
     public static String getDiagnosticReport(Context context) {
         try {
             return buildDiagnosticReport(context.getApplicationContext());
@@ -183,6 +183,10 @@ public final class MihomoCoreManager {
             return "诊断报告生成失败：" + ProxyErrors.redact(error.getClass().getSimpleName()
                     + ": " + error.getMessage());
         }
+    }
+
+    public static void recordDiagnosticEvent(String message) {
+        appendDiagnostic(appContext, message);
     }
 
     public static State getState() {
@@ -291,10 +295,6 @@ public final class MihomoCoreManager {
 
     public static void reconnect(ResultCallback callback) {
         reloadConfig(runtimeConfig(), Collections.emptyMap(), callback);
-    }
-
-    public static void closeConnections(ResultCallback callback) {
-        invoke("closeAllConnections", "", callback);
     }
 
     private static void startInternal(Context context) {

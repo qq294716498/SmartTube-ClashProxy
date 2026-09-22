@@ -1,6 +1,7 @@
 package com.liskovsoft.smartyoutubetv2.common.proxy;
 
 import android.content.Context;
+import android.util.Log;
 import com.liskovsoft.googlecommon.common.helpers.RetrofitOkHttpHelper;
 import com.liskovsoft.sharedutils.okhttp.OkHttpManager;
 
@@ -19,6 +20,7 @@ import okhttp3.Protocol;
 
 /** Flavor-safe media transport. Every new request observes the current route. */
 public final class EmbeddedProxyRoute {
+    private static final String TAG = "EmbeddedProxyRoute";
     private static boolean enabled;
     private static long epoch;
     private static OkHttpClient client;
@@ -92,19 +94,34 @@ public final class EmbeddedProxyRoute {
     public static synchronized void refresh() {
         epoch++;
         if (client != null) {
-            client.dispatcher().cancelAll();
-            client.connectionPool().evictAll();
+            closeClient("embedded", client);
             client = null;
         }
         if (installed) {
             // Retrofit's lazy singleton survives OkHttpManager.unhold(). Clear
             // its retained pool as well, preserving authentication interceptors.
-            OkHttpClient api = RetrofitOkHttpHelper.getClient();
-            api.dispatcher().cancelAll();
-            api.connectionPool().evictAll();
-            OkHttpClient shared = OkHttpManager.instance().getClient();
-            shared.dispatcher().cancelAll();
-            shared.connectionPool().evictAll();
+            // Some Android TV builds initialize these clients lazily. Route changes
+            // must remain best-effort and must never terminate the UI process.
+            try {
+                closeClient("retrofit", RetrofitOkHttpHelper.getClient());
+            } catch (Throwable error) {
+                Log.w(TAG, "Unable to refresh Retrofit connections", error);
+            }
+            try {
+                closeClient("shared", OkHttpManager.instance().getClient());
+            } catch (Throwable error) {
+                Log.w(TAG, "Unable to refresh shared connections", error);
+            }
+        }
+    }
+
+    private static void closeClient(String name, OkHttpClient target) {
+        if (target == null) return;
+        try {
+            target.dispatcher().cancelAll();
+            target.connectionPool().evictAll();
+        } catch (Throwable error) {
+            Log.w(TAG, "Unable to refresh " + name + " connections", error);
         }
     }
 

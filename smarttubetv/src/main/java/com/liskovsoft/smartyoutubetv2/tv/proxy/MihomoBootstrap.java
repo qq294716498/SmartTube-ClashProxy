@@ -41,6 +41,8 @@ public final class MihomoBootstrap {
 
         try {
             Class<?> manager = Class.forName(MANAGER_CLASS);
+            Method installCrashHandler = manager.getMethod("installDiagnosticCrashHandler", Context.class);
+            installCrashHandler.invoke(null, context.getApplicationContext());
             Method start = manager.getMethod("startIfEnabled", Context.class);
             start.invoke(null, context.getApplicationContext());
         } catch (Throwable error) {

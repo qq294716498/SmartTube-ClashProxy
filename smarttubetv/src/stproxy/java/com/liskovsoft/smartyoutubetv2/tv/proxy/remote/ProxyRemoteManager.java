@@ -36,7 +36,6 @@ import java.net.Socket;
 import java.net.URL;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
-import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Enumeration;
@@ -49,7 +48,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-/** A token-protected LAN page for managing the TV proxy from a phone. */
+/** A short-lived LAN page for managing the TV proxy and reading diagnostics. */
 public final class ProxyRemoteManager {
     private static final int MAX_BODY_BYTES = 64 * 1024;
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
@@ -64,7 +63,6 @@ public final class ProxyRemoteManager {
     private final SubscriptionManager subscriptions;
     private final ProxyPreferences preferences;
     private final ProxyNodeManager nodes;
-    private final String token;
     private final ServerSocket server;
     private final String baseAddress;
     private final AtomicBoolean operationPending = new AtomicBoolean();
@@ -75,7 +73,6 @@ public final class ProxyRemoteManager {
         subscriptions = new SubscriptionManager(this.context);
         preferences = new ProxyPreferences(this.context);
         nodes = new ProxyNodeManager(subscriptions);
-        token = createToken();
         server = new ServerSocket(0);
         String host = findLanAddress();
         if (host == null) {
@@ -90,14 +87,6 @@ public final class ProxyRemoteManager {
     }
 
     public static void show(Context context) {
-        show(context, false);
-    }
-
-    public static void showDiagnostics(Context context) {
-        show(context, true);
-    }
-
-    private static void show(Context context, boolean diagnostics) {
         try {
             ProxyRemoteManager manager = instance;
             if (manager == null || manager.server.isClosed()) {
@@ -109,16 +98,14 @@ public final class ProxyRemoteManager {
                     }
                 }
             }
-            manager.showQr(context, diagnostics);
+            manager.showQr(context);
         } catch (Exception error) {
             MessageHelpers.showLongMessage(context, "无法启动手机页面：" + safeMessage(error));
         }
     }
 
-    private void showQr(Context activityContext, boolean diagnostics) throws Exception {
-        String address = diagnostics
-                ? baseAddress + "/diagnostics?token=" + token
-                : baseAddress + "/?token=" + token;
+    private void showQr(Context activityContext) throws Exception {
+        String address = baseAddress + "/";
         float density = activityContext.getResources().getDisplayMetrics().density;
         int padding = (int) (24 * density);
         LinearLayout layout = new LinearLayout(activityContext);
@@ -132,9 +119,7 @@ public final class ProxyRemoteManager {
         layout.addView(qr, new LinearLayout.LayoutParams(size, size));
 
         TextView instructions = new TextView(activityContext);
-        instructions.setText(diagnostics
-                ? "手机与电视连接同一局域网后扫码。\n可查看、复制或下载已脱敏的完整日志；本次入口 15 分钟后自动关闭。\n\n" + address
-                : "手机与电视连接同一局域网后扫码。\n可管理订阅并选择节点；本次入口 15 分钟后自动关闭。\n\n" + address);
+        instructions.setText("手机与电视连接同一局域网后扫码。\n可管理订阅、选择节点并查看诊断日志；本次入口 15 分钟后自动关闭。\n\n" + address);
         instructions.setTextSize(18);
         instructions.setGravity(Gravity.CENTER);
         instructions.setTextIsSelectable(true);
@@ -142,7 +127,7 @@ public final class ProxyRemoteManager {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         new AlertDialog.Builder(activityContext)
-                .setTitle(diagnostics ? "手机扫码查看日志" : "手机扫码管理")
+                .setTitle("手机扫码管理")
                 .setView(layout)
                 .setNegativeButton("关闭", null)
                 .show();
@@ -201,15 +186,11 @@ public final class ProxyRemoteManager {
             }
             Map<String, String> parameters = parseForm(query);
             parameters.putAll(parseForm(body));
-            if (!token.equals(parameters.get("token"))) {
-                send(writer, 403, "text/plain; charset=utf-8", "访问密钥无效，请重新扫描电视二维码");
-                return;
-            }
             if ("POST".equals(method)) {
                 handleAction(path, parameters);
                 redirect(writer);
             } else if ("/diagnostics".equals(path)) {
-                send(writer, 200, "text/html; charset=utf-8", renderDiagnosticPage());
+                send(writer, 200, "text/html; charset=utf-8", renderPage());
             } else if ("/diagnostics.txt".equals(path)) {
                 send(writer, 200, "text/plain; charset=utf-8",
                         MihomoCoreManager.getDiagnosticReport(context),
@@ -274,12 +255,13 @@ public final class ProxyRemoteManager {
                 .append("main{max-width:720px;margin:auto}h1{font-size:25px}.card{background:#111d31;border:1px solid #263957;border-radius:16px;padding:16px;margin:14px 0}")
                 .append("input,select,button{box-sizing:border-box;width:100%;font-size:16px;border-radius:10px;padding:12px;margin:6px 0}")
                 .append("input,select{color:#fff;background:#081324;border:1px solid #405679}button{border:0;background:#1677ff;color:#fff;font-weight:700}")
-                .append(".danger{background:#a52d36}.secondary{background:#344967}.ok{color:#58e6a9}.muted{color:#9fb0c8;font-size:14px}</style></head><body><main>")
+                .append(".danger{background:#a52d36}.secondary{background:#344967}.ok{color:#58e6a9}.bad{color:#ff8d96}.muted{color:#9fb0c8;font-size:14px}")
+                .append("a.button{display:block;text-align:center;text-decoration:none;background:#1677ff;color:white;font-weight:700;border-radius:10px;padding:13px;margin:10px 0}")
+                .append("pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#07101f;border-radius:10px;padding:14px;font:13px/1.55 monospace}</style></head><body><main>")
                 .append("<h1>优兔喵视频 · 代理管理</h1><p class=muted>此页面只在当前局域网和本次电视应用运行期间有效。</p>");
         html.append("<section class=card><b>操作状态：</b>").append(escape(operationStatus))
-                .append("<p><a style='color:#73baff' href='/?token=").append(token).append("'>刷新状态</a>")
-                .append(" · <a style='color:#73baff' href='/diagnostics?token=").append(token)
-                .append("'>查看诊断日志</a></p></section>");
+                .append("<p><a style='color:#73baff' href='/'>刷新状态</a></p></section>");
+        appendDiagnostics(html);
         for (SubscriptionProfile profile : profiles) {
             html.append("<section class=card><h2>").append(escape(profile.name));
             if (profile.active) html.append(" <span class=ok>● 当前</span>");
@@ -321,23 +303,13 @@ public final class ProxyRemoteManager {
         return html.append("</main></body></html>").toString();
     }
 
-    private String renderDiagnosticPage() {
+    private void appendDiagnostics(StringBuilder html) {
         String report = MihomoCoreManager.getDiagnosticReport(context);
         String state = String.valueOf(MihomoCoreManager.getState());
         String stage = MihomoCoreManager.getStartupDiagnostic(context);
         String error = MihomoCoreManager.getLastError();
-        StringBuilder html = new StringBuilder(report.length() + 4096);
-        html.append("<!doctype html><html lang=zh-CN><head><meta charset=utf-8>")
-                .append("<meta name=viewport content='width=device-width,initial-scale=1'>")
-                .append("<title>优兔喵视频故障诊断</title><style>")
-                .append("body{margin:0;background:#07101f;color:#eef5ff;font-family:system-ui;padding:18px}")
-                .append("main{max-width:900px;margin:auto}.card{background:#111d31;border:1px solid #263957;border-radius:16px;padding:16px;margin:14px 0}")
-                .append("h1{font-size:25px}.bad{color:#ff8d96}.ok{color:#58e6a9}.muted{color:#9fb0c8}")
-                .append("a.button{display:block;text-align:center;text-decoration:none;background:#1677ff;color:white;font-weight:700;border-radius:10px;padding:13px;margin:10px 0}")
-                .append("pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#07101f;border-radius:10px;padding:14px;font:13px/1.55 monospace}")
-                .append("</style></head><body><main><h1>优兔喵视频 · 故障诊断</h1>")
-                .append("<p class=muted>日志已自动隐藏订阅地址、密码、UUID 和访问令牌。本页面 15 分钟后失效。</p>")
-                .append("<section class=card><b>核心状态：</b><span class='")
+        html.append("<section class=card><h2>故障诊断</h2><p class=muted>日志已自动隐藏订阅地址、密码、UUID 和访问令牌。</p>")
+                .append("<b>核心状态：</b><span class='")
                 .append(MihomoCoreManager.State.RUNNING.name().equals(state) ? "ok" : "bad")
                 .append("'>").append(escape(state)).append("</span><br><b>最后阶段：</b>")
                 .append(escape(stage));
@@ -345,12 +317,9 @@ public final class ProxyRemoteManager {
             html.append("<br><b>最后错误：</b><span class=bad>")
                     .append(escape(ProxyErrors.redact(error))).append("</span>");
         }
-        html.append("</section><a class=button href='/diagnostics.txt?token=").append(token)
-                .append("'>下载 TXT 日志</a><section class=card><h2>完整诊断日志</h2><pre>")
-                .append(escape(report)).append("</pre></section>")
-                .append("<p><a style='color:#73baff' href='/?token=").append(token)
-                .append("'>返回代理管理</a></p></main></body></html>");
-        return html.toString();
+        html.append("<a class=button href='/diagnostics.txt'>下载 TXT 日志</a>")
+                .append("<details><summary>查看完整诊断日志</summary><pre>")
+                .append(escape(report)).append("</pre></details></section>");
     }
 
     private NodeSnapshot loadNodes(SubscriptionProfile active) {
@@ -371,7 +340,7 @@ public final class ProxyRemoteManager {
         return snapshot;
     }
 
-    private String hidden() { return hidden("token", token); }
+    private String hidden() { return ""; }
 
     private static String hidden(String name, String value) {
         return "<input type=hidden name='" + attr(name) + "' value='" + attr(value) + "'>";
@@ -383,7 +352,7 @@ public final class ProxyRemoteManager {
     }
 
     private void redirect(BufferedWriter writer) throws Exception {
-        writer.write("HTTP/1.1 303 See Other\r\nLocation: /?token=" + token +
+        writer.write("HTTP/1.1 303 See Other\r\nLocation: /" +
                 "\r\nCache-Control: no-store\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
         writer.flush();
     }
@@ -444,14 +413,6 @@ public final class ProxyRemoteManager {
             }
         }
         return null;
-    }
-
-    private static String createToken() {
-        byte[] bytes = new byte[16];
-        new SecureRandom().nextBytes(bytes);
-        StringBuilder value = new StringBuilder(32);
-        for (byte item : bytes) value.append(String.format("%02x", item & 0xff));
-        return value.toString();
     }
 
     private static boolean isHttpUrl(String value) {
