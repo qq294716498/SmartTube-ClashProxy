@@ -210,7 +210,20 @@ public final class ProxySettingsPresenter {
             }
             @Override public void onNothingSelected(android.widget.AdapterView<?> parent) { }
         });
-        nodeView.setOnItemClickListener((parent, view, position, id) -> switchNode(nodeList.get(position)));
+        nodeView.setOnItemClickListener((parent, view, position, id) -> {
+            if (position < 0 || position >= nodeList.size()) {
+                say("节点列表正在刷新，请重新选择。");
+                return;
+            }
+            try {
+                switchNode(nodeList.get(position));
+            } catch (Throwable error) {
+                switching = false;
+                MihomoCoreManager.recordDiagnosticEvent(
+                        "节点点击异常：" + error.getClass().getName() + ": " + error.getMessage());
+                say("节点切换发生异常，请扫码查看诊断日志。");
+            }
+        });
         content.addView(nodeView, new LinearLayout.LayoutParams(-1, 0, 1));
         loadNodes();
     }
@@ -423,7 +436,6 @@ public final class ProxySettingsPresenter {
             MihomoCoreManager.ensureStarted(context, (data, error) -> ui(() ->
                     say(error == null ? "核心已就绪。核心就绪不等于 YouTube 已连通。" : error)));
         }));
-        content.addView(button("手机扫码查看诊断日志", () -> ProxyRemoteManager.showDiagnostics(context)));
         content.addView(button("导出诊断日志", () -> {
             say("正在导出日志…");
             new Thread(() -> {
