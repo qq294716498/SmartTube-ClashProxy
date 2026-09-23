@@ -19,6 +19,8 @@ public final class MihomoBootstrap {
     private static final String TAG = "MihomoBootstrap";
     private static final String MANAGER_CLASS =
             "com.liskovsoft.smartyoutubetv2.tv.proxy.MihomoCoreManager";
+    private static final String REMOTE_MANAGER_CLASS =
+            "com.liskovsoft.smartyoutubetv2.tv.proxy.remote.ProxyRemoteManager";
 
     private MihomoBootstrap() {
     }
@@ -49,6 +51,12 @@ public final class MihomoBootstrap {
             // Proxy startup must never crash SmartTube. The diagnostics UI will
             // surface this state in a later phase without exposing user secrets.
             Log.e(TAG, "Embedded Mihomo startup failed", error);
+        }
+        try {
+            Class<?> remote = Class.forName(REMOTE_MANAGER_CLASS);
+            remote.getMethod("start", Context.class).invoke(null, context.getApplicationContext());
+        } catch (Throwable error) {
+            Log.e(TAG, "Phone management page startup failed", error);
         }
     }
 }

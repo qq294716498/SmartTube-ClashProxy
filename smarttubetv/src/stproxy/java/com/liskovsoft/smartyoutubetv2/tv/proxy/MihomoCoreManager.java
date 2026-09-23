@@ -58,6 +58,7 @@ public final class MihomoCoreManager {
     private static final String KEY_DIAGNOSTIC_TIME = "time";
     private static final String DIAGNOSTIC_LOG_FILE = "mihomo-initialization.log";
     private static final int READY_TIMEOUT_MS = 8_000;
+    private static final int CONFIG_APPLY_TIMEOUT_MS = 60_000;
     private static final int CONNECT_TIMEOUT_MS = 200;
     private static final int RETRY_DELAY_MS = 100;
 
@@ -242,7 +243,9 @@ public final class MihomoCoreManager {
             callback.onResult(null, "正在应用配置，请稍后重试");
             return;
         }
+        recordDiagnosticEvent("正在读取当前代理状态");
         getProxies((snapshot, snapshotError) -> {
+        recordDiagnosticEvent(snapshotError == null ? "当前代理状态读取完成" : "读取当前代理状态失败，继续应用订阅配置");
         String previousNode = "REJECT";
         if (snapshotError == null) {
             try {
@@ -357,6 +360,7 @@ public final class MihomoCoreManager {
         File previous = new File(target.getParentFile(), CONFIG_FILE + ".previous");
         try {
             RuntimeConfigPolicy.writeSafe(source, temporary);
+            recordDiagnosticEvent("运行配置已生成，开始验证订阅");
         } catch (IOException error) {
             callback.onResult(null, "Unable to stage config: " + error.getMessage());
             return;
@@ -364,10 +368,12 @@ public final class MihomoCoreManager {
 
         validateConfig(temporary, (ignored, validationError) -> EXECUTOR.execute(() -> {
             if (validationError != null) {
+                recordDiagnosticEvent("订阅配置验证失败");
                 temporary.delete();
                 callback.onResult(null, validationError);
                 return;
             }
+            recordDiagnosticEvent("订阅配置验证成功，正在交给 Mihomo 加载");
             try {
                 if (target.isFile()) {
                     copyFile(target, previous);
@@ -392,18 +398,23 @@ public final class MihomoCoreManager {
         try {
             JSONObject setup = new JSONObject();
             setup.put("selected-map", new JSONObject(selectedMap));
+            recordDiagnosticEvent("开始执行 Mihomo setupConfig");
             invoke("setupConfig", setup.toString(), (data, error) -> {
                 String setupError = error != null ? error : emptyToNull(data);
                 if (setupError != null) {
+                    recordDiagnosticEvent("Mihomo setupConfig 失败：" + setupError);
                     callback.onResult(null, setupError);
                     return;
                 }
+                recordDiagnosticEvent("Mihomo setupConfig 成功，正在设置本地代理");
                 enforceLocalRuntime(
                         (updateData, updateError) -> EXECUTOR.execute(() -> {
                             String finalError = updateError != null ? updateError : emptyToNull(updateData);
                             if (finalError == null && awaitLoopbackProxy()) {
+                                recordDiagnosticEvent("本地代理配置成功");
                                 callback.onResult("", null);
                             } else {
+                                recordDiagnosticEvent("本地代理配置失败");
                                 callback.onResult(null, finalError != null ? finalError : lastError);
                             }
                         }));
@@ -464,14 +475,15 @@ public final class MihomoCoreManager {
         Handler handler = new Handler(Looper.getMainLooper());
         Runnable timeout = () -> {
             if (finished.compareAndSet(false, true)) {
+                recordDiagnosticEvent("Mihomo 操作超时：" + method);
                 if ("setupConfig".equals(method)) {
-                    lastError = "配置应用超时，核心状态未知，请重启应用";
+                    lastError = "Mihomo 已启动，但订阅配置加载超时；请重启应用后重试";
                     STATE.set(State.FAILED);
                 }
                 callback.onResult(null, "Mihomo 操作超时：" + method);
             }
         };
-        handler.postDelayed(timeout, "setupConfig".equals(method) ? 30_000 : 12_000);
+        handler.postDelayed(timeout, "setupConfig".equals(method) ? CONFIG_APPLY_TIMEOUT_MS : 12_000);
         ResultCallback once = (result, error) -> {
             if (finished.compareAndSet(false, true)) {
                 handler.removeCallbacks(timeout);

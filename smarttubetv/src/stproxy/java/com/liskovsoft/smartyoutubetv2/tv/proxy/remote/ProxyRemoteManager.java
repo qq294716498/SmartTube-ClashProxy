@@ -26,8 +26,10 @@ import com.liskovsoft.smartyoutubetv2.tv.proxy.model.SubscriptionProfile;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
+import java.net.BindException;
 import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
@@ -48,9 +50,11 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-/** A short-lived LAN page for managing the TV proxy and reading diagnostics. */
+/** A LAN page for managing the TV proxy and reading diagnostics while the app runs. */
 public final class ProxyRemoteManager {
     private static final int MAX_BODY_BYTES = 64 * 1024;
+    private static final int DEFAULT_PORT = 61271;
+    private static final int MAX_PORT_ATTEMPTS = 100;
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static final ExecutorService CLIENTS = Executors.newFixedThreadPool(4, runnable -> {
         Thread thread = new Thread(runnable, "proxy-phone-client");
@@ -64,7 +68,6 @@ public final class ProxyRemoteManager {
     private final ProxyPreferences preferences;
     private final ProxyNodeManager nodes;
     private final ServerSocket server;
-    private final String baseAddress;
     private final AtomicBoolean operationPending = new AtomicBoolean();
     private volatile String operationStatus = "准备就绪";
 
@@ -73,39 +76,65 @@ public final class ProxyRemoteManager {
         subscriptions = new SubscriptionManager(this.context);
         preferences = new ProxyPreferences(this.context);
         nodes = new ProxyNodeManager(subscriptions);
-        server = new ServerSocket(0);
         String host = findLanAddress();
         if (host == null) {
-            server.close();
             throw new IllegalStateException("电视未连接局域网");
         }
-        baseAddress = "http://" + host + ":" + server.getLocalPort();
+        server = bindAvailablePort();
         Thread accept = new Thread(this::acceptLoop, "proxy-phone-server");
         accept.setDaemon(true);
         accept.start();
-        MAIN.postDelayed(() -> { try { server.close(); } catch (Exception ignored) { } }, 15 * 60 * 1000L);
+    }
+
+    private static ServerSocket bindAvailablePort() throws IOException {
+        for (int port = DEFAULT_PORT; port < DEFAULT_PORT + MAX_PORT_ATTEMPTS; port++) {
+            try {
+                return new ServerSocket(port);
+            } catch (BindException occupied) {
+                // Keep a predictable URL when the default port is already in use.
+            }
+        }
+        throw new BindException("手机管理页没有可用端口");
+    }
+
+    /** Keep the bookmarked LAN address available while the TV app is running. */
+    public static void start(Context context) {
+        ProxyRemoteManager current = instance;
+        if (current != null && !current.server.isClosed()) return;
+        Context application = context.getApplicationContext();
+        Thread startup = new Thread(() -> {
+            try {
+                getOrCreate(application);
+            } catch (Exception ignored) {
+                // Wi-Fi may not be connected yet when the app first launches.
+                MAIN.postDelayed(() -> start(application), 30_000);
+            }
+        }, "proxy-phone-startup");
+        startup.setDaemon(true);
+        startup.start();
+    }
+
+    private static ProxyRemoteManager getOrCreate(Context context) throws Exception {
+        synchronized (ProxyRemoteManager.class) {
+            if (instance == null || instance.server.isClosed()) {
+                instance = new ProxyRemoteManager(context);
+            }
+            return instance;
+        }
     }
 
     public static void show(Context context) {
         try {
-            ProxyRemoteManager manager = instance;
-            if (manager == null || manager.server.isClosed()) {
-                synchronized (ProxyRemoteManager.class) {
-                    manager = instance;
-                    if (manager == null || manager.server.isClosed()) {
-                        manager = new ProxyRemoteManager(context);
-                        instance = manager;
-                    }
-                }
-            }
-            manager.showQr(context);
+            getOrCreate(context).showQr(context);
         } catch (Exception error) {
             MessageHelpers.showLongMessage(context, "无法启动手机页面：" + safeMessage(error));
         }
     }
 
     private void showQr(Context activityContext) throws Exception {
-        String address = baseAddress + "/";
+        String host = findLanAddress();
+        if (host == null) throw new IllegalStateException("电视未连接局域网");
+        String address = "http://" + host + ":" + server.getLocalPort() + "/";
         float density = activityContext.getResources().getDisplayMetrics().density;
         int padding = (int) (24 * density);
         LinearLayout layout = new LinearLayout(activityContext);
@@ -119,7 +148,7 @@ public final class ProxyRemoteManager {
         layout.addView(qr, new LinearLayout.LayoutParams(size, size));
 
         TextView instructions = new TextView(activityContext);
-        instructions.setText("手机与电视连接同一局域网后扫码。\n可管理订阅、选择节点并查看诊断日志；本次入口 15 分钟后自动关闭。\n\n" + address);
+        instructions.setText("手机与电视连接同一局域网后，可收藏以下地址，之后直接打开。\n如果默认端口被占用，以此处显示的端口为准；电视应用运行期间保持可用。\n\n" + address);
         instructions.setTextSize(18);
         instructions.setGravity(Gravity.CENTER);
         instructions.setTextIsSelectable(true);

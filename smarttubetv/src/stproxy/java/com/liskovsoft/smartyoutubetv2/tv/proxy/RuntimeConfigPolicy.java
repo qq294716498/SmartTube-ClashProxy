@@ -63,12 +63,6 @@ public final class RuntimeConfigPolicy {
         config.put("mode", "global");
         config.put("log-level", "warning");
         config.put("ipv6", false);
-        // Race all resolved addresses and keep the first successful connection.
-        // This reduces slow-start penalties on high-latency TV/Wi-Fi routes.
-        config.put("tcp-concurrent", true);
-        // HTTP CONNECT already carries the destination hostname. Sniffing is not
-        // needed for this app-only proxy and only adds work on the TV.
-        config.remove("sniffer");
         Map<String, Object> tun = new LinkedHashMap<>();
         tun.put("enable", false);
         config.put("tun", tun);
