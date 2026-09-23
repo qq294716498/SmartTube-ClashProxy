@@ -27,8 +27,8 @@ public class RuntimeConfigPolicyTest {
         assertFalse(config.containsKey("external-controller-unix"));
         assertFalse(config.containsKey("listeners"));
         assertFalse(config.containsKey("authentication"));
-        assertEquals(true, config.get("tcp-concurrent"));
-        assertFalse(config.containsKey("sniffer"));
+        assertEquals(false, config.get("tcp-concurrent"));
+        assertTrue(config.containsKey("sniffer"));
         assertEquals(false, ((Map<?, ?>) config.get("tun")).get("enable"));
     }
 
