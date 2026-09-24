@@ -180,6 +180,7 @@ android {
         }
         stproxy {
             applicationId "app.smarttube.proxy"
+            versionCode 2443 + Integer.parseInt(System.getenv("GITHUB_RUN_NUMBER") ?: "0")
             minSdkVersion 21
             targetSdkVersion project.properties.compileSdkVersion
             buildConfigField "boolean", "MIHOMO_EMBEDDED", "true"
