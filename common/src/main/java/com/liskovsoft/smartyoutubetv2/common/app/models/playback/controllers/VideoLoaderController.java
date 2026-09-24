@@ -30,6 +30,7 @@ import com.liskovsoft.youtubeapi.service.YouTubeServiceManager;
 import java.util.concurrent.TimeUnit;
 
 import io.reactivex.Observable;
+import io.reactivex.android.schedulers.AndroidSchedulers;
 import io.reactivex.disposables.Disposable;
 
 public class VideoLoaderController extends BasePlayerController {
@@ -272,7 +273,8 @@ public class VideoLoaderController extends BasePlayerController {
         MediaItemService mediaItemManager = service.getMediaItemService();
         Observable<MediaItemFormatInfo> request = mediaItemManager.getFormatInfoObserve(video.videoId);
         // Bound a stalled metadata request only when the embedded proxy is active.
-        if (proxyPlayback) request = request.timeout(35, TimeUnit.SECONDS);
+        if (proxyPlayback) request = request.timeout(35, TimeUnit.SECONDS)
+                .observeOn(AndroidSchedulers.mainThread());
         mFormatInfoAction = request
                 .subscribe(formatInfo -> {
                                EmbeddedProxyRoute.recordPlaybackEvent("获取播放地址：成功");
