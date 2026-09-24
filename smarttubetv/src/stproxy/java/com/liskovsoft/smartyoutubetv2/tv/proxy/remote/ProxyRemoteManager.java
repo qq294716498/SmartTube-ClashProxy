@@ -136,22 +136,24 @@ public final class ProxyRemoteManager {
         if (host == null) throw new IllegalStateException("电视未连接局域网");
         String address = "http://" + host + ":" + server.getLocalPort() + "/";
         float density = activityContext.getResources().getDisplayMetrics().density;
-        int padding = (int) (24 * density);
+        int screenHeight = activityContext.getResources().getDisplayMetrics().heightPixels;
+        int qrSize = Math.min((int) (260 * density), (int) (screenHeight * 0.42f));
+        int padding = (int) (16 * density);
         LinearLayout layout = new LinearLayout(activityContext);
         layout.setOrientation(LinearLayout.VERTICAL);
         layout.setGravity(Gravity.CENTER_HORIZONTAL);
         layout.setPadding(padding, padding, padding, padding);
 
         ImageView qr = new ImageView(activityContext);
-        qr.setImageBitmap(createQr(address, (int) (300 * density)));
-        int size = (int) (320 * density);
-        layout.addView(qr, new LinearLayout.LayoutParams(size, size));
+        qr.setImageBitmap(createQr(address, qrSize));
+        layout.addView(qr, new LinearLayout.LayoutParams(qrSize, qrSize));
 
         TextView instructions = new TextView(activityContext);
-        instructions.setText("手机与电视连接同一局域网后，可收藏以下地址，之后直接打开。\n如果默认端口被占用，以此处显示的端口为准；电视应用运行期间保持可用。\n\n" + address);
-        instructions.setTextSize(18);
+        instructions.setText(host + ":" + server.getLocalPort());
+        instructions.setTextSize(20);
         instructions.setGravity(Gravity.CENTER);
         instructions.setTextIsSelectable(true);
+        instructions.setPadding(0, padding, 0, 0);
         layout.addView(instructions, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 

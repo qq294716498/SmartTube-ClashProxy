@@ -111,7 +111,7 @@ public final class ProxyNodeManager {
                 subscriptions.saveNode(profile.id, group, node.runtimeName,
                         node.automatic ? SubscriptionProfile.MODE_AUTO : SubscriptionProfile.MODE_MANUAL,
                         nodeCount);
-                EmbeddedProxyRoute.refresh();
+                EmbeddedProxyRoute.refreshAfterNodeChange();
                 MihomoCoreManager.recordDiagnosticEvent("节点切换成功");
             }
             callback.onResult(error);

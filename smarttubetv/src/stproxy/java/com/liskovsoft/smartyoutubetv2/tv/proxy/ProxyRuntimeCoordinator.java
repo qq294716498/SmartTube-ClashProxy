@@ -173,10 +173,9 @@ public final class ProxyRuntimeCoordinator {
             activeRuntimeId = profile.id;
             MihomoCoreManager.recordDiagnosticEvent("节点恢复成功，准备刷新应用网络");
             routeThroughLocalProxy(app);
-            // Cancelling app-owned OkHttp pools is enough to move new requests to
-            // the selected route. The native close-all action is intentionally not
-            // used here: some Android TV runtimes terminate inside that JNI call.
-            EmbeddedProxyRoute.refresh();
+            // New requests use the selected route. Let current requests finish so
+            // a node change does not turn the home page into "Socket closed".
+            EmbeddedProxyRoute.refreshAfterNodeChange();
             MihomoCoreManager.recordDiagnosticEvent("代理路由应用成功");
         }
         callback.onComplete(lastError);

@@ -5,6 +5,10 @@ on:
     branches: [ "main" ]
     paths-ignore:
       - "docs/**"
+  pull_request:
+    branches: [ "main" ]
+    paths-ignore:
+      - "docs/**"
   workflow_dispatch:
 
 permissions:
@@ -34,6 +38,25 @@ jobs:
       - name: Fetch verified Mihomo AAR
         run: bash scripts/fetch-libmihomo.sh
 
+      - name: Restore persistent APK signing key
+        if: github.event_name != 'pull_request'
+        env:
+          PROXY_KEYSTORE_B64: ${{ secrets.SMARTTUBE_PROXY_KEYSTORE_B64 }}
+        run: |
+          if [ -z "$PROXY_KEYSTORE_B64" ]; then
+            echo '::error::Set the SMARTTUBE_PROXY_KEYSTORE_B64 repository secret before building updateable APKs.'
+            exit 1
+          fi
+          printf '%s' "$PROXY_KEYSTORE_B64" | base64 --decode > smarttubetv/proxy-signing.p12
+          chmod 600 smarttubetv/proxy-signing.p12
+          cat > keystore.properties <<'EOF'
+          storeFile=proxy-signing.p12
+          storePassword=android
+          keyAlias=smarttubeproxy
+          keyPassword=android
+          EOF
+          keytool -list -keystore smarttubetv/proxy-signing.p12 -storepass android -alias smarttubeproxy > /dev/null
+
       - name: Grant Gradle permission
         run: chmod +x gradlew
 
@@ -47,6 +70,7 @@ jobs:
         run: ./gradlew clean assembleStproxyDebug
 
       - name: Generate checksums
+        if: github.event_name != 'pull_request'
         working-directory: smarttubetv/build/outputs/apk/stproxy/debug
         run: |
           sha256sum *_arm64-v8a.apk > SHA256SUMS-arm64.txt
@@ -54,6 +78,7 @@ jobs:
           sha256sum *_universal.apk > SHA256SUMS-universal.txt
 
       - name: Upload ARM64 APK
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: SmartTube-Proxy-arm64
@@ -64,6 +89,7 @@ jobs:
           retention-days: 7
 
       - name: Upload ARMv7 APK
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: SmartTube-Proxy-armeabi-v7a
@@ -74,6 +100,7 @@ jobs:
           retention-days: 7
 
       - name: Upload universal APK and checksums
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: SmartTube-Proxy-universal

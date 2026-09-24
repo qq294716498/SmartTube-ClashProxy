@@ -6,6 +6,7 @@ import androidx.annotation.Nullable;
 
 import com.liskovsoft.sharedutils.helpers.Helpers;
 import com.liskovsoft.smartyoutubetv2.common.R;
+import com.liskovsoft.smartyoutubetv2.common.app.presenters.BrowsePresenter;
 import com.liskovsoft.smartyoutubetv2.common.app.presenters.YTSignInPresenter;
 import com.liskovsoft.smartyoutubetv2.common.utils.Utils;
 
@@ -20,7 +21,11 @@ public class CategoryEmptyError implements ErrorFragmentData {
 
     @Override
     public void onAction() {
-        YTSignInPresenter.instance(mContext).start();
+        if (requiresSignIn()) {
+            YTSignInPresenter.instance(mContext).start();
+        } else {
+            BrowsePresenter.instance(mContext).refresh(false);
+        }
     }
 
     @Override
@@ -36,6 +41,11 @@ public class CategoryEmptyError implements ErrorFragmentData {
 
     @Override
     public String getActionText() {
-        return mError != null && Helpers.startsWith(mError.getMessage(), "AuthError") ? mContext.getString(R.string.action_signin) : null;
+        if (requiresSignIn()) return mContext.getString(R.string.action_signin);
+        return "app.smarttube.proxy".equals(mContext.getPackageName()) ? "重试" : null;
+    }
+
+    private boolean requiresSignIn() {
+        return mError != null && Helpers.startsWith(mError.getMessage(), "AuthError");
     }
 }
