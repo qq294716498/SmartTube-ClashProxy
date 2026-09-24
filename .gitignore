@@ -48,6 +48,8 @@ build/
 *.hprof
 log.txt
 android.keystore
+keystore.properties
+smarttubetv/proxy-signing.p12
 android-upd2.keystore
 build.log
 notes.txt
