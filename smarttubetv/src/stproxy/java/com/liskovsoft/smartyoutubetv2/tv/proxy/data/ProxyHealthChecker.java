@@ -1,8 +1,8 @@
 package com.liskovsoft.smartyoutubetv2.tv.proxy.data;
 
 import com.liskovsoft.smartyoutubetv2.tv.proxy.MihomoCoreManager;
+import com.liskovsoft.smartyoutubetv2.tv.proxy.ProxyErrors;
 
-import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -23,6 +23,18 @@ public final class ProxyHealthChecker {
         public boolean youtube;
         public boolean googleVideo;
         public boolean dns;
+        public String youtubeDetail;
+        public String googleVideoDetail;
+    }
+
+    private static final class Probe {
+        final boolean passed;
+        final String detail;
+
+        Probe(boolean passed, String detail) {
+            this.passed = passed;
+            this.detail = detail;
+        }
     }
 
     private static final int TIMEOUT_MS = 5_000;
@@ -42,8 +54,13 @@ public final class ProxyHealthChecker {
             // Local DNS does not measure DNS through Mihomo and can block without a timeout.
             result.dns = false;
             if (result.localProxy) {
-                result.youtube = checkHttps("https://www.youtube.com/generate_204", true);
-                result.googleVideo = checkHttps("https://redirector.googlevideo.com/report_mapping?di=no", false);
+                Probe youtube = checkHttps("https://www.youtube.com/generate_204", true);
+                result.youtube = youtube.passed;
+                result.youtubeDetail = youtube.detail;
+                Probe video = checkHttps("https://redirector.googlevideo.com/report_mapping?di=no", false);
+                result.googleVideo = video.passed;
+                result.googleVideoDetail = video.detail;
+                MihomoCoreManager.recordDiagnosticEvent("视频域名探测：" + video.detail);
             }
             callback.onResult(result);
         });
@@ -59,7 +76,7 @@ public final class ProxyHealthChecker {
         }
     }
 
-    private static boolean checkHttps(String address, boolean expectNoContent) {
+    private static Probe checkHttps(String address, boolean expectNoContent) {
         HttpURLConnection connection = null;
         try {
             Proxy proxy = new Proxy(Proxy.Type.HTTP, new InetSocketAddress(
@@ -70,13 +87,14 @@ public final class ProxyHealthChecker {
             connection.setInstanceFollowRedirects(false);
             connection.setUseCaches(false);
             int response = connection.getResponseCode();
-            InputStream stream = response >= 400 ? connection.getErrorStream() : connection.getInputStream();
-            if (stream != null) {
-                stream.close();
-            }
-            return expectNoContent ? response == 204 : response >= 200 && response < 400;
-        } catch (Exception ignored) {
-            return false;
+            // Any HTTP response means CONNECT and TLS succeeded. A 403/404 on
+            // this fixed probe URL says nothing about real video stream URLs.
+            return new Probe(expectNoContent ? response == 204 : response > 0,
+                    "TLS已建立，HTTP " + response);
+        } catch (Exception error) {
+            String message = ProxyErrors.redact(error.getMessage());
+            return new Probe(false, error.getClass().getSimpleName()
+                    + (message == null || message.isEmpty() ? "" : "：" + message));
         } finally {
             if (connection != null) {
                 connection.disconnect();

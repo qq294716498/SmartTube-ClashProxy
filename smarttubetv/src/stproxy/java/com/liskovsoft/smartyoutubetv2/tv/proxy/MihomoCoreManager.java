@@ -9,6 +9,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.provider.MediaStore;
 import android.util.Log;
+import com.liskovsoft.smartyoutubetv2.common.proxy.EmbeddedProxyRoute;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -655,6 +656,10 @@ public final class MihomoCoreManager {
         report.append("Last persisted stage: ").append(getStartupDiagnostic(context)).append('\n');
         report.append("Last error: ").append(lastError == null ? "none" : lastError).append('\n');
         report.append("\n--- Timeline ---\n");
+        report.append("\n--- Playback request failures (latest 12) ---\n");
+        String playbackFailures = EmbeddedProxyRoute.getRecentFailures();
+        report.append(playbackFailures.isEmpty() ? "No playback failures recorded.\n" : playbackFailures);
+        report.append("\n--- Mihomo timeline ---\n");
 
         File file = new File(context.getFilesDir(), DIAGNOSTIC_LOG_FILE);
         if (file.isFile()) {

@@ -34,6 +34,7 @@ import com.liskovsoft.smartyoutubetv2.common.exoplayer.selector.track.VideoTrack
 import com.liskovsoft.smartyoutubetv2.common.exoplayer.versions.ExoUtils;
 import com.liskovsoft.smartyoutubetv2.common.prefs.PlayerData;
 import com.liskovsoft.smartyoutubetv2.common.prefs.PlayerTweaksData;
+import com.liskovsoft.smartyoutubetv2.common.proxy.EmbeddedProxyRoute;
 
 import java.io.InputStream;
 import java.lang.ref.WeakReference;
@@ -329,6 +330,7 @@ public class ExoPlayerController implements Player.EventListener {
         // NOTE: Player is released at this point. So, there is no sense to restore the playback here.
 
         Throwable nested = error.getCause() != null ? error.getCause() : error;
+        EmbeddedProxyRoute.recordFailure("读取视频流", error);
 
         mEventListener.onEngineError(error.type, error.rendererIndex, nested);
     }

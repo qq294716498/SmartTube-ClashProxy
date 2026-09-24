@@ -10,8 +10,12 @@ import java.net.InetSocketAddress;
 import java.net.ProxySelector;
 import java.net.SocketAddress;
 import java.net.URI;
+import java.text.SimpleDateFormat;
+import java.util.ArrayDeque;
 import java.util.Collections;
+import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 
 import okhttp3.Call;
@@ -25,6 +29,7 @@ public final class EmbeddedProxyRoute {
     private static long epoch;
     private static OkHttpClient client;
     private static boolean installed;
+    private static final ArrayDeque<String> RECENT_FAILURES = new ArrayDeque<>();
     private static final java.net.Proxy LOCAL_PROXY = new java.net.Proxy(
             java.net.Proxy.Type.HTTP, new InetSocketAddress("127.0.0.1", 7890));
     private static final ProxySelector SELECTOR = new ProxySelector() {
@@ -140,5 +145,32 @@ public final class EmbeddedProxyRoute {
 
     public static Call.Factory callFactory() {
         return FACTORY;
+    }
+
+    /** Playback failures are otherwise invisible to the phone's proxy report. */
+    public static synchronized void recordFailure(String stage, Throwable error) {
+        if (!installed || error == null) return;
+        StringBuilder summary = new StringBuilder(new SimpleDateFormat("HH:mm:ss", Locale.US)
+                .format(new Date())).append(" | ").append(stage)
+                .append(" | 代理").append(enabled ? "开" : "关");
+        Throwable cause = error;
+        for (int depth = 0; depth < 4 && cause != null; depth++, cause = cause.getCause()) {
+            summary.append(" | ").append(cause.getClass().getSimpleName());
+            String message = cause.getMessage();
+            if (message != null && !message.isEmpty()) {
+                String safe = message.replaceAll("(?i)(https?|wss?)://[^\\s\\\"<>]+", "[网络地址]")
+                        .replaceAll("(?i)(token|password|secret|uuid|authorization)[\\s\\\"']*[:=][\\s\\\"']*[^\\s,}\\\"']+", "$1=***")
+                        .replaceAll("[\\r\\n]+", " ");
+                summary.append(": ").append(safe, 0, Math.min(safe.length(), 160));
+            }
+        }
+        if (RECENT_FAILURES.size() == 12) RECENT_FAILURES.removeFirst();
+        RECENT_FAILURES.addLast(summary.toString());
+    }
+
+    public static synchronized String getRecentFailures() {
+        StringBuilder report = new StringBuilder();
+        for (String failure : RECENT_FAILURES) report.append(failure).append('\n');
+        return report.toString();
     }
 }
