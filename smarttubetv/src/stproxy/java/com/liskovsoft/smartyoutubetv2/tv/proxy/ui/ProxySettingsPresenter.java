@@ -443,7 +443,7 @@ public final class ProxySettingsPresenter {
                 ui(() -> say(result));
             }, "proxy-log-export").start();
         }));
-        TextView note = text("排查顺序：订阅更新 → 开启代理 → 选择节点 → 检测 YouTube → 返回播放。\n\n切换节点会关闭旧代理连接，以便新的视频请求使用新节点。", 15, MUTED);
+        TextView note = text("排查顺序：订阅更新 → 开启代理 → 选择节点 → 检测 YouTube → 返回播放。\n\n切换节点后，已开始的请求可以完成；新请求使用新节点。", 15, MUTED);
         note.setPadding(dp(12), dp(20), dp(12), 0);
         content.addView(note);
     }
