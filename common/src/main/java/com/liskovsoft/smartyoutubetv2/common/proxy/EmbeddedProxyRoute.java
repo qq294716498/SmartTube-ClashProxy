@@ -21,6 +21,8 @@ import java.util.concurrent.TimeUnit;
 import okhttp3.Call;
 import okhttp3.ConnectionPool;
 import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
 
 /** Flavor-safe media transport. Every new request observes the current route. */
 public final class EmbeddedProxyRoute {
@@ -29,6 +31,8 @@ public final class EmbeddedProxyRoute {
     private static long epoch;
     private static OkHttpClient client;
     private static boolean installed;
+    // Only the media player uses this factory. Keep the host, never the signed stream URL.
+    private static String lastMediaHost;
     private static final ArrayDeque<String> RECENT_FAILURES = new ArrayDeque<>();
     private static final java.net.Proxy LOCAL_PROXY = new java.net.Proxy(
             java.net.Proxy.Type.HTTP, new InetSocketAddress("127.0.0.1", 7890));
@@ -50,25 +54,31 @@ public final class EmbeddedProxyRoute {
     };
     private static final Call.Factory FACTORY = request -> {
         synchronized (EmbeddedProxyRoute.class) {
-            if (client == null) {
-                client = new OkHttpClient.Builder()
-                        // Keep OkHttp's default protocol negotiation so HTTPS video
-                        // connections through Mihomo can use HTTP/2 when supported.
-                        // Forcing HTTP/1.1 amplifies high-latency node round trips and
-                        // becomes especially visible while loading 2K/4K segments.
-                        .connectionPool(new ConnectionPool(10, 5, TimeUnit.MINUTES))
-                        .proxy(enabled
-                                ? new java.net.Proxy(java.net.Proxy.Type.HTTP,
-                                        new InetSocketAddress("127.0.0.1", 7890))
-                                : java.net.Proxy.NO_PROXY)
-                        .connectTimeout(20, TimeUnit.SECONDS)
-                        .readTimeout(20, TimeUnit.SECONDS)
-                        .writeTimeout(20, TimeUnit.SECONDS)
-                        .build();
-            }
-            return client.newCall(request);
+            String host = request.url().host();
+            if (host.endsWith(".googlevideo.com")) lastMediaHost = host;
+            return getClient().newCall(request);
         }
     };
+
+    private static synchronized OkHttpClient getClient() {
+        if (client == null) {
+            client = new OkHttpClient.Builder()
+                    // Keep OkHttp's default protocol negotiation so HTTPS video
+                    // connections through Mihomo can use HTTP/2 when supported.
+                    // Forcing HTTP/1.1 amplifies high-latency node round trips and
+                    // becomes especially visible while loading 2K/4K segments.
+                    .connectionPool(new ConnectionPool(10, 5, TimeUnit.MINUTES))
+                    .proxy(enabled
+                            ? new java.net.Proxy(java.net.Proxy.Type.HTTP,
+                                    new InetSocketAddress("127.0.0.1", 7890))
+                            : java.net.Proxy.NO_PROXY)
+                    .connectTimeout(20, TimeUnit.SECONDS)
+                    .readTimeout(20, TimeUnit.SECONDS)
+                    .writeTimeout(20, TimeUnit.SECONDS)
+                    .build();
+        }
+        return client;
+    }
 
     private EmbeddedProxyRoute() { }
 
@@ -111,6 +121,7 @@ public final class EmbeddedProxyRoute {
 
     private static void refreshConnections(boolean cancelActive) {
         epoch++;
+        lastMediaHost = null;
         if (client != null) {
             closeClient("embedded", client, cancelActive);
             client = null;
@@ -145,6 +156,21 @@ public final class EmbeddedProxyRoute {
 
     public static Call.Factory callFactory() {
         return FACTORY;
+    }
+
+    /** TLS probe using the same transport and proxy state as the media player. */
+    public static int probeHttps(String url, int timeoutMs) throws IOException {
+        // Bypass the player-only host tracker without bypassing its OkHttp client.
+        Call call = getClient().newCall(new Request.Builder().url(url).get().build());
+        call.timeout().timeout(timeoutMs, TimeUnit.MILLISECONDS);
+        try (Response response = call.execute()) {
+            return response.code();
+        }
+    }
+
+    /** A recent actual video CDN host, without any playback URL or signature. */
+    public static synchronized String getLastMediaHost() {
+        return lastMediaHost;
     }
 
     /** Playback failures are otherwise invisible to the phone's proxy report. */
