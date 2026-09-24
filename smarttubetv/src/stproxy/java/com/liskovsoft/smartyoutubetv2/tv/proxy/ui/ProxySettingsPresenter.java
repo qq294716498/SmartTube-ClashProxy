@@ -459,12 +459,17 @@ public final class ProxySettingsPresenter {
             if (epoch != ProxyRuntimeCoordinator.getEpoch()) { say("检测期间代理已变化，请重新检测。"); return; }
             new AlertDialog.Builder(context).setTitle("代理连通检测")
                     .setMessage("本地代理端口：" + result(result.localProxy)
-                            + "\nYouTube：" + result(result.youtube)
-                            + "\n视频域名握手：" + result(result.googleVideo)
-                            + "\n\n本检测经本地代理发出，不代表实际视频带宽或所有地区内容可用。")
+                            + "\nYouTube：" + result(result.youtube) + detail(result.youtubeDetail)
+                            + "\n固定视频域名连接：" + result(result.googleVideo) + detail(result.googleVideoDetail)
+                            + "\n\n固定探测地址的 HTTP 状态不代表实际视频是否可播。"
+                            + "播放失败后请在手机管理页查看诊断日志。")
                     .setPositiveButton("知道了", null).show();
-            say(result.youtube ? "YouTube 检测通过，可返回视频测试播放。" : "YouTube 检测未通过，可换一个节点重试。");
+            say(result.youtube ? "YouTube 检测通过，可返回视频测试播放。" : "YouTube 检测未通过，请查看详细错误。");
         }));
+    }
+
+    private static String detail(String value) {
+        return value == null || value.isEmpty() ? "" : "（" + value + "）";
     }
 
     private final class NodeAdapter extends BaseAdapter {

@@ -21,6 +21,7 @@ import com.liskovsoft.sharedutils.mylogger.Log;
 import com.liskovsoft.sharedutils.rx.RxHelper;
 import com.liskovsoft.smartyoutubetv2.common.app.models.data.Video;
 import com.liskovsoft.smartyoutubetv2.common.app.models.data.VideoGroup;
+import com.liskovsoft.smartyoutubetv2.common.proxy.EmbeddedProxyRoute;
 import com.liskovsoft.smartyoutubetv2.common.app.models.playback.service.VideoStateService;
 import com.liskovsoft.smartyoutubetv2.common.app.presenters.ChannelPresenter;
 import com.liskovsoft.smartyoutubetv2.common.app.presenters.ChannelUploadsPresenter;
@@ -256,7 +257,10 @@ public class MediaServiceManager implements OnAccountChange {
         mFormatInfoAction = observable
                 .subscribe(
                         onFormatInfo::onFormatInfo,
-                        error -> Log.e(TAG, "loadFormatInfo error: %s", error.getMessage())
+                        error -> {
+                            EmbeddedProxyRoute.recordFailure("获取播放地址", error);
+                            Log.e(TAG, "loadFormatInfo error: %s", error.getMessage());
+                        }
                 );
     }
 
