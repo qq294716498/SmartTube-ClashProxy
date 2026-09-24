@@ -460,8 +460,8 @@ public final class ProxySettingsPresenter {
             new AlertDialog.Builder(context).setTitle("代理连通检测")
                     .setMessage("本地代理端口：" + result(result.localProxy)
                             + "\nYouTube：" + result(result.youtube) + detail(result.youtubeDetail)
-                            + "\n固定视频域名连接：" + result(result.googleVideo) + detail(result.googleVideoDetail)
-                            + "\n\n固定探测地址的 HTTP 状态不代表实际视频是否可播。"
+                            + "\n" + result.googleVideoSource + "连接：" + result(result.googleVideo) + detail(result.googleVideoDetail)
+                            + "\n\n视频域名检测只检查 TLS 握手，不能代替真实播放测试。"
                             + "播放失败后请在手机管理页查看诊断日志。")
                     .setPositiveButton("知道了", null).show();
             say(result.youtube ? "YouTube 检测通过，可返回视频测试播放。" : "YouTube 检测未通过，请查看详细错误。");
