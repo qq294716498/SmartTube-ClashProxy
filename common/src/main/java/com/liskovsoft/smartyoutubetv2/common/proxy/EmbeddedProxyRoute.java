@@ -94,11 +94,20 @@ public final class EmbeddedProxyRoute {
         refresh();
     }
 
-    /** Also used after a node switch so existing media sockets do not keep the old node. */
+    /** Hard route change: cancel requests that might still be using the old direct path. */
     public static synchronized void refresh() {
+        refreshConnections(true);
+    }
+
+    /** After a proxy node change, let active requests finish and retire idle sockets. */
+    public static synchronized void refreshAfterNodeChange() {
+        refreshConnections(false);
+    }
+
+    private static void refreshConnections(boolean cancelActive) {
         epoch++;
         if (client != null) {
-            closeClient("embedded", client);
+            closeClient("embedded", client, cancelActive);
             client = null;
         }
         if (installed) {
@@ -107,22 +116,22 @@ public final class EmbeddedProxyRoute {
             // Some Android TV builds initialize these clients lazily. Route changes
             // must remain best-effort and must never terminate the UI process.
             try {
-                closeClient("retrofit", RetrofitOkHttpHelper.getClient());
+                closeClient("retrofit", RetrofitOkHttpHelper.getClient(), cancelActive);
             } catch (Throwable error) {
                 Log.w(TAG, "Unable to refresh Retrofit connections", error);
             }
             try {
-                closeClient("shared", OkHttpManager.instance().getClient());
+                closeClient("shared", OkHttpManager.instance().getClient(), cancelActive);
             } catch (Throwable error) {
                 Log.w(TAG, "Unable to refresh shared connections", error);
             }
         }
     }
 
-    private static void closeClient(String name, OkHttpClient target) {
+    private static void closeClient(String name, OkHttpClient target, boolean cancelActive) {
         if (target == null) return;
         try {
-            target.dispatcher().cancelAll();
+            if (cancelActive) target.dispatcher().cancelAll();
             target.connectionPool().evictAll();
         } catch (Throwable error) {
             Log.w(TAG, "Unable to refresh " + name + " connections", error);
