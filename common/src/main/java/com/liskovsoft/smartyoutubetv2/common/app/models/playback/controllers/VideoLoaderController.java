@@ -23,9 +23,13 @@ import com.liskovsoft.smartyoutubetv2.common.app.presenters.dialogs.VideoActionP
 import com.liskovsoft.smartyoutubetv2.common.app.views.PlaybackView;
 import com.liskovsoft.smartyoutubetv2.common.misc.MediaServiceManager;
 import com.liskovsoft.smartyoutubetv2.common.prefs.PlayerData;
+import com.liskovsoft.smartyoutubetv2.common.proxy.EmbeddedProxyRoute;
 import com.liskovsoft.smartyoutubetv2.common.utils.Utils;
 import com.liskovsoft.youtubeapi.service.YouTubeServiceManager;
 
+import java.util.concurrent.TimeUnit;
+
+import io.reactivex.Observable;
 import io.reactivex.disposables.Disposable;
 
 public class VideoLoaderController extends BasePlayerController {
@@ -36,6 +40,8 @@ public class VideoLoaderController extends BasePlayerController {
     private SuggestionsController mSuggestionsController;
     private ErrorFixerController mErrorFixerController;
     private Disposable mFormatInfoAction;
+    private String mLastFormatVideoId;
+    private int mProxyFormatFailures;
     private final Runnable mReloadVideo = () -> {
         getMainController().onNewVideo(getVideo());
     };
@@ -250,6 +256,13 @@ public class VideoLoaderController extends BasePlayerController {
             return;
         }
 
+        boolean proxyPlayback = EmbeddedProxyRoute.isEnabled();
+        if (!Helpers.equals(mLastFormatVideoId, video.videoId)) {
+            mLastFormatVideoId = video.videoId;
+            mProxyFormatFailures = 0;
+        }
+        EmbeddedProxyRoute.recordPlaybackEvent("获取播放地址：开始");
+
         // Fix no progress on next video (the engine may still buffering a bit)
         //getPlayer().showProgressBar(true);
         Utils.post(mShowProgressBar);
@@ -257,10 +270,25 @@ public class VideoLoaderController extends BasePlayerController {
 
         ServiceManager service = YouTubeServiceManager.instance();
         MediaItemService mediaItemManager = service.getMediaItemService();
-        mFormatInfoAction = mediaItemManager.getFormatInfoObserve(video.videoId)
-                .subscribe(this::processFormatInfo,
+        Observable<MediaItemFormatInfo> request = mediaItemManager.getFormatInfoObserve(video.videoId);
+        // Bound a stalled metadata request only when the embedded proxy is active.
+        if (proxyPlayback) request = request.timeout(35, TimeUnit.SECONDS);
+        mFormatInfoAction = request
+                .subscribe(formatInfo -> {
+                               EmbeddedProxyRoute.recordPlaybackEvent("获取播放地址：成功");
+                               mProxyFormatFailures = 0;
+                               processFormatInfo(formatInfo);
+                           },
                            error -> {
+                               EmbeddedProxyRoute.recordFailure("实际播放地址", error);
+                               EmbeddedProxyRoute.recordPlaybackEvent("获取播放地址：失败");
+                               if (getPlayer() == null) return;
                                getPlayer().showProgressBar(false);
+                               if (proxyPlayback && ++mProxyFormatFailures >= 3) {
+                                   EmbeddedProxyRoute.recordPlaybackEvent("获取播放地址：停止自动重试");
+                                   MessageHelpers.showLongMessage(getContext(), "播放地址连续获取失败，请查看手机管理页日志，切换节点后重试");
+                                   return;
+                               }
                                mErrorFixerController.runFormatErrorAction(error);
                            });
     }
