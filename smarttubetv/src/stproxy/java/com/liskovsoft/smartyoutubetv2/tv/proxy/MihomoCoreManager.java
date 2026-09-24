@@ -656,6 +656,9 @@ public final class MihomoCoreManager {
         report.append("Last persisted stage: ").append(getStartupDiagnostic(context)).append('\n');
         report.append("Last error: ").append(lastError == null ? "none" : lastError).append('\n');
         report.append("\n--- Timeline ---\n");
+        report.append("\n--- Playback stages (latest 20) ---\n");
+        String playbackEvents = EmbeddedProxyRoute.getRecentPlaybackEvents();
+        report.append(playbackEvents.isEmpty() ? "No playback stages recorded.\n" : playbackEvents);
         report.append("\n--- Playback request failures (latest 12) ---\n");
         String playbackFailures = EmbeddedProxyRoute.getRecentFailures();
         report.append(playbackFailures.isEmpty() ? "No playback failures recorded.\n" : playbackFailures);

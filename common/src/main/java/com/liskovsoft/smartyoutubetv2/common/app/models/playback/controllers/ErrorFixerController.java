@@ -14,6 +14,7 @@ import com.liskovsoft.smartyoutubetv2.common.misc.BufferingDetector;
 import com.liskovsoft.smartyoutubetv2.common.misc.BufferingDetector.OnLongBuffering;
 import com.liskovsoft.smartyoutubetv2.common.prefs.PlayerData;
 import com.liskovsoft.smartyoutubetv2.common.prefs.PlayerTweaksData;
+import com.liskovsoft.smartyoutubetv2.common.proxy.EmbeddedProxyRoute;
 import com.liskovsoft.smartyoutubetv2.common.utils.Utils;
 import com.liskovsoft.youtubeapi.service.YouTubeServiceManager;
 
@@ -24,6 +25,8 @@ public class ErrorFixerController extends BasePlayerController implements OnLong
     private static final long STREAM_END_THRESHOLD_MS = 180_000;
     private final BufferingDetector mBufferingDetector = new BufferingDetector(this);
     private VideoLoaderController mVideoLoaderController;
+    private String mLastBufferVideoId;
+    private int mProxyLongBufferCount;
 
     @Override
     public void onInit() {
@@ -40,6 +43,13 @@ public class ErrorFixerController extends BasePlayerController implements OnLong
     @Override
     public void onLongBuffering() {
         if (getPlayer() == null) {
+            return;
+        }
+        EmbeddedProxyRoute.recordPlaybackEvent("播放器：持续缓冲超过20秒");
+        if (EmbeddedProxyRoute.isEnabled() && ++mProxyLongBufferCount >= 3) {
+            EmbeddedProxyRoute.recordPlaybackEvent("播放器：停止自动重启");
+            getPlayer().showProgressBar(false);
+            MessageHelpers.showLongMessage(getContext(), "视频持续缓冲，请查看手机管理页日志，切换节点后重试");
             return;
         }
 
@@ -91,6 +101,7 @@ public class ErrorFixerController extends BasePlayerController implements OnLong
     @Override
     public void onPlay() {
         mBufferingDetector.onStopBuffering();
+        mProxyLongBufferCount = 0;
     }
 
     @Override
@@ -100,6 +111,10 @@ public class ErrorFixerController extends BasePlayerController implements OnLong
 
     @Override
     public void onNewVideo(Video item) {
+        if (item != null && !Helpers.equals(mLastBufferVideoId, item.videoId)) {
+            mLastBufferVideoId = item.videoId;
+            mProxyLongBufferCount = 0;
+        }
         mBufferingDetector.start();
     }
 

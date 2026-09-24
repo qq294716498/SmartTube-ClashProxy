@@ -34,6 +34,7 @@ public final class EmbeddedProxyRoute {
     // Only the media player uses this factory. Keep the host, never the signed stream URL.
     private static String lastMediaHost;
     private static final ArrayDeque<String> RECENT_FAILURES = new ArrayDeque<>();
+    private static final ArrayDeque<String> RECENT_PLAYBACK_EVENTS = new ArrayDeque<>();
     private static final java.net.Proxy LOCAL_PROXY = new java.net.Proxy(
             java.net.Proxy.Type.HTTP, new InetSocketAddress("127.0.0.1", 7890));
     private static final ProxySelector SELECTOR = new ProxySelector() {
@@ -197,6 +198,20 @@ public final class EmbeddedProxyRoute {
     public static synchronized String getRecentFailures() {
         StringBuilder report = new StringBuilder();
         for (String failure : RECENT_FAILURES) report.append(failure).append('\n');
+        return report.toString();
+    }
+
+    /** Stage names are fixed app strings; never log video IDs or signed URLs. */
+    public static synchronized void recordPlaybackEvent(String stage) {
+        if (!installed || !enabled) return;
+        if (RECENT_PLAYBACK_EVENTS.size() == 20) RECENT_PLAYBACK_EVENTS.removeFirst();
+        RECENT_PLAYBACK_EVENTS.addLast(new SimpleDateFormat("HH:mm:ss", Locale.US)
+                .format(new Date()) + " | " + stage);
+    }
+
+    public static synchronized String getRecentPlaybackEvents() {
+        StringBuilder report = new StringBuilder();
+        for (String event : RECENT_PLAYBACK_EVENTS) report.append(event).append('\n');
         return report.toString();
     }
 }

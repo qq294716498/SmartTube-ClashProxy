@@ -345,6 +345,8 @@ public class ExoPlayerController implements Player.EventListener {
         boolean isPausePressed = Player.STATE_READY == playbackState && !playWhenReady;
         boolean isPlaybackEnded = Player.STATE_ENDED == playbackState && playWhenReady;
         boolean isBuffering = Player.STATE_BUFFERING == playbackState && playWhenReady;
+        if (isPlayPressed) EmbeddedProxyRoute.recordPlaybackEvent("播放器：开始播放");
+        else if (isBuffering) EmbeddedProxyRoute.recordPlaybackEvent("播放器：缓冲中");
 
         // Fix chapters (seek and play) after playback ends
         if (isPlaybackEnded && mIsEnded) {
