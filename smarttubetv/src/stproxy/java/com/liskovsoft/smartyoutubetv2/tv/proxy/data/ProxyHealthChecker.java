@@ -3,7 +3,6 @@ package com.liskovsoft.smartyoutubetv2.tv.proxy.data;
 import com.liskovsoft.smartyoutubetv2.tv.proxy.MihomoCoreManager;
 import com.liskovsoft.smartyoutubetv2.tv.proxy.ProxyErrors;
 
-import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -88,10 +87,6 @@ public final class ProxyHealthChecker {
             connection.setInstanceFollowRedirects(false);
             connection.setUseCaches(false);
             int response = connection.getResponseCode();
-            InputStream stream = response >= 400 ? connection.getErrorStream() : connection.getInputStream();
-            if (stream != null) {
-                stream.close();
-            }
             // Any HTTP response means CONNECT and TLS succeeded. A 403/404 on
             // this fixed probe URL says nothing about real video stream URLs.
             return new Probe(expectNoContent ? response == 204 : response > 0,
