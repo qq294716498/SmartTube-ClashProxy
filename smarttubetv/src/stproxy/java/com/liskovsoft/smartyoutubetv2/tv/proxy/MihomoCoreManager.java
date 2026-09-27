@@ -57,7 +57,9 @@ public final class MihomoCoreManager {
     private static final String DIAGNOSTIC_PREFS = "mihomo_startup_diagnostics";
     private static final String KEY_DIAGNOSTIC_STAGE = "stage";
     private static final String KEY_DIAGNOSTIC_TIME = "time";
-    private static final String DIAGNOSTIC_LOG_FILE = "mihomo-initialization.log";
+    private static final String DIAGNOSTIC_LOG_PREFIX = "mihomo-initialization-";
+    private static final int MAX_DIAGNOSTIC_BYTES = 512 * 1024;
+    private static final long DIAGNOSTIC_RETENTION_MS = 7L * 24 * 60 * 60 * 1000;
     private static final int READY_TIMEOUT_MS = 8_000;
     private static final int CONFIG_APPLY_TIMEOUT_MS = 60_000;
     private static final int CONNECT_TIMEOUT_MS = 200;
@@ -617,19 +619,59 @@ public final class MihomoCoreManager {
         appendDiagnostic(application, stage);
     }
 
-    private static void appendDiagnostic(Context context, String text) {
+    private static synchronized void appendDiagnostic(Context context, String text) {
         if (context == null || text == null) {
             return;
         }
-        File file = new File(context.getFilesDir(), DIAGNOSTIC_LOG_FILE);
-        String timestamp = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
-                .format(new Date());
+        File file = currentDiagnosticFile(context);
+        pruneDiagnosticFiles(context);
+        byte[] entry = (new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
+                .format(new Date()) + " | " + ProxyErrors.redact(text) + "\n")
+                .getBytes(StandardCharsets.UTF_8);
+        if (file.length() + entry.length > MAX_DIAGNOSTIC_BYTES) {
+            // Keep the newest complete lines and bound storage even on busy days.
+            try (FileInputStream input = new FileInputStream(file)) {
+                byte[] existing = new byte[(int) file.length()];
+                int read = 0;
+                while (read < existing.length) {
+                    int count = input.read(existing, read, existing.length - read);
+                    if (count < 0) break;
+                    read += count;
+                }
+                int start = Math.max(0, read - MAX_DIAGNOSTIC_BYTES / 2);
+                while (start < read && existing[start++] != '\n') { }
+                try (FileOutputStream trimmed = new FileOutputStream(file, false)) {
+                    trimmed.write(existing, start, read - start);
+                }
+            } catch (IOException error) {
+                Log.w(TAG, "Unable to trim diagnostic log", error);
+            }
+        }
         try (FileOutputStream output = new FileOutputStream(file, true)) {
-            output.write((timestamp + " | " + ProxyErrors.redact(text) + "\n").getBytes(StandardCharsets.UTF_8));
+            output.write(entry);
             output.flush();
             output.getFD().sync();
         } catch (IOException ignored) {
             Log.e(TAG, "Unable to append Mihomo diagnostic log", ignored);
+        }
+    }
+
+    private static File currentDiagnosticFile(Context context) {
+        String day = new SimpleDateFormat("yyyyMMdd", Locale.US).format(new Date());
+        return new File(context.getFilesDir(), DIAGNOSTIC_LOG_PREFIX + day + ".log");
+    }
+
+    private static void pruneDiagnosticFiles(Context context) {
+        File[] files = context.getFilesDir().listFiles();
+        if (files == null) return;
+        long cutoff = System.currentTimeMillis() - DIAGNOSTIC_RETENTION_MS;
+        for (File candidate : files) {
+            String name = candidate.getName();
+            if ((name.startsWith(DIAGNOSTIC_LOG_PREFIX) && name.endsWith(".log")
+                    || "mihomo-initialization.log".equals(name))
+                    && candidate.lastModified() < cutoff && !candidate.delete()) {
+                Log.w(TAG, "Unable to remove old diagnostic log");
+            }
         }
     }
 
@@ -664,7 +706,7 @@ public final class MihomoCoreManager {
         report.append(playbackFailures.isEmpty() ? "No playback failures recorded.\n" : playbackFailures);
         report.append("\n--- Mihomo timeline ---\n");
 
-        File file = new File(context.getFilesDir(), DIAGNOSTIC_LOG_FILE);
+        File file = currentDiagnosticFile(context);
         if (file.isFile()) {
             try (FileInputStream input = new FileInputStream(file)) {
                 byte[] buffer = new byte[16 * 1024];
