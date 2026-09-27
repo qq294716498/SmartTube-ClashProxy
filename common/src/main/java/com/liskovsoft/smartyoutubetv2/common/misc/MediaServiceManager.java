@@ -31,6 +31,7 @@ import com.liskovsoft.smartyoutubetv2.common.prefs.MainUIData;
 import com.liskovsoft.smartyoutubetv2.common.utils.LoadingManager;
 import com.liskovsoft.smartyoutubetv2.common.utils.Utils;
 import com.liskovsoft.youtubeapi.service.YouTubeServiceManager;
+import com.liskovsoft.youtubeapi.innertube.InnertubeService;
 
 import io.reactivex.Observable;
 import io.reactivex.disposables.Disposable;
@@ -252,11 +253,26 @@ public class MediaServiceManager implements OnAccountChange {
 
         RxHelper.disposeActions(mFormatInfoAction);
 
-        Observable<MediaItemFormatInfo> observable = mItemService.getFormatInfoObserve(item.videoId);
+        Observable<MediaItemFormatInfo> observable = mItemService.getFormatInfoObserve(item.videoId)
+                .onErrorResumeNext(error -> {
+                    // The legacy player endpoint can return null for a valid video.
+                    // Its Rx wrapper turns that into "fromNullable result is null",
+                    // while the API's Innertube fallback only runs for an explicit
+                    // unplayable result. Try the alternate player endpoint here.
+                    if (!EmbeddedProxyRoute.isEnabled() || error.getMessage() == null
+                            || !error.getMessage().contains("fromNullable result is null")) {
+                        return Observable.error(error);
+                    }
+                    EmbeddedProxyRoute.recordPlaybackEvent("旧接口无播放地址，尝试备用接口");
+                    return RxHelper.fromCallable(() -> InnertubeService.createFormatInfo(item.videoId));
+                });
 
         mFormatInfoAction = observable
                 .subscribe(
-                        onFormatInfo::onFormatInfo,
+                        formatInfo -> {
+                            EmbeddedProxyRoute.recordPlaybackEvent("获取播放地址：成功");
+                            onFormatInfo.onFormatInfo(formatInfo);
+                        },
                         error -> {
                             EmbeddedProxyRoute.recordFailure("获取播放地址", error);
                             Log.e(TAG, "loadFormatInfo error: %s", error.getMessage());
