@@ -308,9 +308,18 @@ public class VideoLoaderController extends BasePlayerController {
         PlaybackView player = getPlayer();
 
         if (player == null || getVideo() == null) {
+            EmbeddedProxyRoute.recordPlaybackEvent("播放数据：播放器或视频已关闭");
             return;
         }
 
+        String formatType = formatInfo.isUnplayable() ? "不可播放"
+                : formatInfo.containsDashFormats() ? "DASH"
+                : formatInfo.containsSabrFormats() ? "SABR"
+                : formatInfo.containsHlsUrl() ? "HLS"
+                : formatInfo.containsUrlFormats() ? "直链"
+                : formatInfo.getDashManifestUrl() != null ? "DASH清单"
+                : "无可用格式";
+        EmbeddedProxyRoute.recordPlaybackEvent("播放数据：" + formatType);
         String bgImageUrl = null;
 
         getVideo().sync(formatInfo);
