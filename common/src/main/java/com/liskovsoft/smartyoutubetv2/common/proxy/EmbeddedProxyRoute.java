@@ -3,6 +3,7 @@ package com.liskovsoft.smartyoutubetv2.common.proxy;
 import android.content.Context;
 import android.util.Log;
 import com.liskovsoft.googlecommon.common.helpers.RetrofitOkHttpHelper;
+import com.liskovsoft.googlecommon.common.helpers.DefaultHeaders;
 import com.liskovsoft.sharedutils.okhttp.OkHttpManager;
 
 import java.io.IOException;
@@ -33,6 +34,7 @@ public final class EmbeddedProxyRoute {
     private static boolean installed;
     // Only the media player uses this factory. Keep the host, never the signed stream URL.
     private static String lastMediaHost;
+    private static String lastMediaResult;
     private static final ArrayDeque<String> RECENT_FAILURES = new ArrayDeque<>();
     private static final ArrayDeque<String> RECENT_PLAYBACK_EVENTS = new ArrayDeque<>();
     private static final java.net.Proxy LOCAL_PROXY = new java.net.Proxy(
@@ -73,6 +75,29 @@ public final class EmbeddedProxyRoute {
                             ? new java.net.Proxy(java.net.Proxy.Type.HTTP,
                                     new InetSocketAddress("127.0.0.1", 7890))
                             : java.net.Proxy.NO_PROXY)
+                    .addInterceptor(chain -> {
+                        String host = chain.request().url().host();
+                        boolean media = host.endsWith(".googlevideo.com");
+                        try {
+                            Request mediaRequest = chain.request();
+                            if (media) {
+                                // The metadata fallback can issue WEB URLs while the
+                                // player factory uses a TV User-Agent.
+                                String clientName = mediaRequest.url().queryParameter("c");
+                                String userAgent = mediaUserAgent(clientName);
+                                if (userAgent != null) {
+                                    mediaRequest = mediaRequest.newBuilder()
+                                            .header("User-Agent", userAgent).build();
+                                }
+                            }
+                            Response response = chain.proceed(mediaRequest);
+                            if (media) recordMediaStatus(mediaRequest, response.code());
+                            return response;
+                        } catch (IOException error) {
+                            if (media) recordFailure("视频流连接 " + host, error);
+                            throw error;
+                        }
+                    })
                     .connectTimeout(20, TimeUnit.SECONDS)
                     .readTimeout(20, TimeUnit.SECONDS)
                     .writeTimeout(20, TimeUnit.SECONDS)
@@ -82,6 +107,13 @@ public final class EmbeddedProxyRoute {
     }
 
     private EmbeddedProxyRoute() { }
+
+    private static String mediaUserAgent(String clientName) {
+        if ("WEB_EMBEDDED_PLAYER".equals(clientName)) return DefaultHeaders.USER_AGENT_SAFARI;
+        if ("WEB".equals(clientName)) return DefaultHeaders.USER_AGENT_WEB;
+        if ("MWEB".equals(clientName)) return DefaultHeaders.USER_AGENT_MOBILE_WEB;
+        return null;
+    }
 
     public static boolean isSupported(Context context) {
         return "app.smarttube.proxy".equals(context.getPackageName());
@@ -123,6 +155,7 @@ public final class EmbeddedProxyRoute {
     private static void refreshConnections(boolean cancelActive) {
         epoch++;
         lastMediaHost = null;
+        lastMediaResult = null;
         if (client != null) {
             closeClient("embedded", client, cancelActive);
             client = null;
@@ -174,12 +207,52 @@ public final class EmbeddedProxyRoute {
         return lastMediaHost;
     }
 
+    private static synchronized void recordMediaStatus(Request request, int status) {
+        String host = request.url().host();
+        String result = host + " HTTP " + status + " | " + mediaRequestSummary(request);
+        if (result.equals(lastMediaResult)) return;
+        lastMediaResult = result;
+        if (status >= 400) {
+            recordFailure("视频流响应 " + result, new IOException("HTTP " + status));
+        } else {
+            recordPlaybackEvent("视频流响应 " + result);
+        }
+    }
+
+    /** Only fixed labels and booleans: signed URLs, tokens and video IDs never enter logs. */
+    private static String mediaRequestSummary(Request request) {
+        String clientName = request.url().queryParameter("c");
+        String client = "WEB".equals(clientName) || "MWEB".equals(clientName)
+                || "WEB_EMBEDDED_PLAYER".equals(clientName) || "TVHTML5".equals(clientName)
+                || "ANDROID".equals(clientName) || "ANDROID_VR".equals(clientName)
+                ? clientName : "其他/未知";
+        String agent = request.header("User-Agent");
+        String agentType = DefaultHeaders.USER_AGENT_WEB.equals(agent) ? "WEB"
+                : DefaultHeaders.USER_AGENT_MOBILE_WEB.equals(agent) ? "MWEB"
+                : DefaultHeaders.USER_AGENT_SAFARI.equals(agent) ? "SAFARI" : "TV/其他";
+        String expiry = "未知";
+        try {
+            String rawExpiry = request.url().queryParameter("expire");
+            if (rawExpiry != null) {
+                long remaining = Long.parseLong(rawExpiry) - System.currentTimeMillis() / 1000;
+                expiry = remaining < 0 ? "已过期" : remaining < 60 ? "不足1分钟" : "有效";
+            }
+        } catch (NumberFormatException ignored) { }
+        return "内置" + (enabled ? "开" : "关(外部未知)")
+                + " | 客户端=" + client + " | UA=" + agentType
+                + " | 有pot=" + (request.url().queryParameter("pot") != null)
+                + " | 有签名=" + (request.url().queryParameter("sig") != null
+                    || request.url().queryParameter("signature") != null)
+                + " | 有n=" + (request.url().queryParameter("n") != null)
+                + " | 地址=" + expiry;
+    }
+
     /** Playback failures are otherwise invisible to the phone's proxy report. */
     public static synchronized void recordFailure(String stage, Throwable error) {
         if (!installed || error == null) return;
         StringBuilder summary = new StringBuilder(new SimpleDateFormat("HH:mm:ss", Locale.US)
                 .format(new Date())).append(" | ").append(stage)
-                .append(" | 代理").append(enabled ? "开" : "关");
+                .append(" | 内置").append(enabled ? "开" : "关(外部未知)");
         Throwable cause = error;
         for (int depth = 0; depth < 4 && cause != null; depth++, cause = cause.getCause()) {
             summary.append(" | ").append(cause.getClass().getSimpleName());
@@ -203,10 +276,11 @@ public final class EmbeddedProxyRoute {
 
     /** Stage names are fixed app strings; never log video IDs or signed URLs. */
     public static synchronized void recordPlaybackEvent(String stage) {
-        if (!installed || !enabled) return;
+        if (!installed) return;
         if (RECENT_PLAYBACK_EVENTS.size() == 20) RECENT_PLAYBACK_EVENTS.removeFirst();
         RECENT_PLAYBACK_EVENTS.addLast(new SimpleDateFormat("HH:mm:ss", Locale.US)
-                .format(new Date()) + " | " + stage);
+                .format(new Date()) + " | 内置" + (enabled ? "开" : "关(外部未知)")
+                + " | " + stage);
     }
 
     public static synchronized String getRecentPlaybackEvents() {

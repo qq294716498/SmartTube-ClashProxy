@@ -26,6 +26,7 @@ import com.liskovsoft.smartyoutubetv2.common.prefs.PlayerData;
 import com.liskovsoft.smartyoutubetv2.common.proxy.EmbeddedProxyRoute;
 import com.liskovsoft.smartyoutubetv2.common.utils.Utils;
 import com.liskovsoft.youtubeapi.service.YouTubeServiceManager;
+import com.liskovsoft.youtubeapi.innertube.InnertubeService;
 
 import java.util.concurrent.TimeUnit;
 
@@ -272,6 +273,14 @@ public class VideoLoaderController extends BasePlayerController {
         ServiceManager service = YouTubeServiceManager.instance();
         MediaItemService mediaItemManager = service.getMediaItemService();
         Observable<MediaItemFormatInfo> request = mediaItemManager.getFormatInfoObserve(video.videoId);
+        request = request.onErrorResumeNext(error -> {
+            if (error.getMessage() == null
+                    || !error.getMessage().contains("fromNullable result is null")) {
+                return Observable.error(error);
+            }
+            EmbeddedProxyRoute.recordPlaybackEvent("旧播放接口返回空，尝试备用接口");
+            return RxHelper.fromCallable(() -> InnertubeService.createFormatInfo(video.videoId));
+        });
         // Bound a stalled metadata request only when the embedded proxy is active.
         if (proxyPlayback) request = request.timeout(35, TimeUnit.SECONDS)
                 .observeOn(AndroidSchedulers.mainThread());
@@ -299,9 +308,18 @@ public class VideoLoaderController extends BasePlayerController {
         PlaybackView player = getPlayer();
 
         if (player == null || getVideo() == null) {
+            EmbeddedProxyRoute.recordPlaybackEvent("播放数据：播放器或视频已关闭");
             return;
         }
 
+        String formatType = formatInfo.isUnplayable() ? "不可播放"
+                : formatInfo.containsDashFormats() ? "DASH"
+                : formatInfo.containsSabrFormats() ? "SABR"
+                : formatInfo.containsHlsUrl() ? "HLS"
+                : formatInfo.containsUrlFormats() ? "直链"
+                : formatInfo.getDashManifestUrl() != null ? "DASH清单"
+                : "无可用格式";
+        EmbeddedProxyRoute.recordPlaybackEvent("播放数据：" + formatType);
         String bgImageUrl = null;
 
         getVideo().sync(formatInfo);
