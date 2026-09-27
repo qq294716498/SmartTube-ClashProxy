@@ -273,7 +273,7 @@ public class VideoLoaderController extends BasePlayerController {
         ServiceManager service = YouTubeServiceManager.instance();
         MediaItemService mediaItemManager = service.getMediaItemService();
         Observable<MediaItemFormatInfo> request = mediaItemManager.getFormatInfoObserve(video.videoId);
-        if (proxyPlayback) request = request.onErrorResumeNext(error -> {
+        request = request.onErrorResumeNext(error -> {
             if (error.getMessage() == null
                     || !error.getMessage().contains("fromNullable result is null")) {
                 return Observable.error(error);
