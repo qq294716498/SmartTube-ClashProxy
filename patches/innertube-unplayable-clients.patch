@@ -1,0 +1,67 @@
+diff --git a/youtubeapi/src/main/java/com/liskovsoft/youtubeapi/innertube/InnertubeService.kt b/youtubeapi/src/main/java/com/liskovsoft/youtubeapi/innertube/InnertubeService.kt
+index 63914cf..878ea92 100644
+--- a/youtubeapi/src/main/java/com/liskovsoft/youtubeapi/innertube/InnertubeService.kt
++++ b/youtubeapi/src/main/java/com/liskovsoft/youtubeapi/innertube/InnertubeService.kt
+@@ -15,21 +15,40 @@ internal object InnertubeService {
+     /**
+      * LuanRT variation
+      */
+-    internal fun createFormatInfoV1(videoId: String): MediaItemFormatInfo? {
+-        val session = Session.create() ?: return null
+-        val httpClient = HTTPClient(session)
+-        val playerResult = httpClient.fetch("/player", RequestInit(body = RequestInitBody(videoId, session = session)))
+-            ?: return null
+-
+-        val formatInfo = MediaItemFormatInfoImpl(playerResult)
+-        session.player.decipher(formatInfo)
+-
+-        if (formatInfo.isUnplayable) {
+-            Session.invalidate()
+-        }
+-
+-        return formatInfo
+-    }
++    internal fun createFormatInfoV1(videoId: String): MediaItemFormatInfo? {
++        val session = Session.create() ?: return null
++        val httpClient = HTTPClient(session)
++        val playerResult = httpClient.fetch("/player", RequestInit(body = RequestInitBody(videoId, session = session)))
++            ?: return null
++
++        val formatInfo = MediaItemFormatInfoImpl(playerResult)
++        if (!formatInfo.isUnknownError) {
++            if (!formatInfo.isUnplayable) session.player.decipher(formatInfo)
++            else Session.invalidate()
++            return formatInfo
++        }
++
++        // Some networks receive an UNPLAYABLE response for the WEB client even
++        // though the video is available. Retry only that transient status with
++        // alternative official clients. Preserve age and login restrictions.
++        for (client in listOf("MWEB", "IOS")) {
++            val response = runCatching {
++                httpClient.fetch("/player", RequestInit(body = RequestInitBody(videoId, client, session)))
++            }.getOrNull() ?: continue
++            val alternative = MediaItemFormatInfoImpl(response)
++            if (!alternative.isUnplayable) {
++                session.player.decipher(alternative)
++                Session.invalidate()
++                return alternative
++            }
++            if (!alternative.isUnknownError) {
++                Session.invalidate()
++                return alternative
++            }
++        }
++        Session.invalidate()
++        return formatInfo
++    }
+ 
+     /**
+      * yt-dlp variation
+@@ -44,4 +63,4 @@ internal object InnertubeService {
+ 
+         return formatInfo
+     }
+-}
+\ No newline at end of file
++}
