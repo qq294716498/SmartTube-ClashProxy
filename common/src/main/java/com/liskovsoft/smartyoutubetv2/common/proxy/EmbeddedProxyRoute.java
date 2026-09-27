@@ -33,6 +33,7 @@ public final class EmbeddedProxyRoute {
     private static boolean installed;
     // Only the media player uses this factory. Keep the host, never the signed stream URL.
     private static String lastMediaHost;
+    private static String lastMediaResult;
     private static final ArrayDeque<String> RECENT_FAILURES = new ArrayDeque<>();
     private static final ArrayDeque<String> RECENT_PLAYBACK_EVENTS = new ArrayDeque<>();
     private static final java.net.Proxy LOCAL_PROXY = new java.net.Proxy(
@@ -73,6 +74,18 @@ public final class EmbeddedProxyRoute {
                             ? new java.net.Proxy(java.net.Proxy.Type.HTTP,
                                     new InetSocketAddress("127.0.0.1", 7890))
                             : java.net.Proxy.NO_PROXY)
+                    .addInterceptor(chain -> {
+                        String host = chain.request().url().host();
+                        boolean media = host.endsWith(".googlevideo.com");
+                        try {
+                            Response response = chain.proceed(chain.request());
+                            if (media) recordMediaStatus(host, response.code());
+                            return response;
+                        } catch (IOException error) {
+                            if (media) recordFailure("视频流连接 " + host, error);
+                            throw error;
+                        }
+                    })
                     .connectTimeout(20, TimeUnit.SECONDS)
                     .readTimeout(20, TimeUnit.SECONDS)
                     .writeTimeout(20, TimeUnit.SECONDS)
@@ -123,6 +136,7 @@ public final class EmbeddedProxyRoute {
     private static void refreshConnections(boolean cancelActive) {
         epoch++;
         lastMediaHost = null;
+        lastMediaResult = null;
         if (client != null) {
             closeClient("embedded", client, cancelActive);
             client = null;
@@ -172,6 +186,17 @@ public final class EmbeddedProxyRoute {
     /** A recent actual video CDN host, without any playback URL or signature. */
     public static synchronized String getLastMediaHost() {
         return lastMediaHost;
+    }
+
+    private static synchronized void recordMediaStatus(String host, int status) {
+        String result = host + " HTTP " + status;
+        if (result.equals(lastMediaResult)) return;
+        lastMediaResult = result;
+        if (status >= 400) {
+            recordFailure("视频流响应 " + host, new IOException("HTTP " + status));
+        } else {
+            recordPlaybackEvent("视频流响应 " + host + " HTTP " + status);
+        }
     }
 
     /** Playback failures are otherwise invisible to the phone's proxy report. */
