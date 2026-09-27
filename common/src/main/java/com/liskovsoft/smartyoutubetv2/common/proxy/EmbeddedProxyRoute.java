@@ -3,6 +3,7 @@ package com.liskovsoft.smartyoutubetv2.common.proxy;
 import android.content.Context;
 import android.util.Log;
 import com.liskovsoft.googlecommon.common.helpers.RetrofitOkHttpHelper;
+import com.liskovsoft.googlecommon.common.helpers.DefaultHeaders;
 import com.liskovsoft.sharedutils.okhttp.OkHttpManager;
 
 import java.io.IOException;
@@ -78,7 +79,18 @@ public final class EmbeddedProxyRoute {
                         String host = chain.request().url().host();
                         boolean media = host.endsWith(".googlevideo.com");
                         try {
-                            Response response = chain.proceed(chain.request());
+                            Request mediaRequest = chain.request();
+                            if (media) {
+                                // The metadata fallback can issue WEB URLs while the
+                                // player factory uses a TV User-Agent.
+                                String clientName = mediaRequest.url().queryParameter("c");
+                                String userAgent = mediaUserAgent(clientName);
+                                if (userAgent != null) {
+                                    mediaRequest = mediaRequest.newBuilder()
+                                            .header("User-Agent", userAgent).build();
+                                }
+                            }
+                            Response response = chain.proceed(mediaRequest);
                             if (media) recordMediaStatus(host, response.code());
                             return response;
                         } catch (IOException error) {
@@ -95,6 +107,13 @@ public final class EmbeddedProxyRoute {
     }
 
     private EmbeddedProxyRoute() { }
+
+    private static String mediaUserAgent(String clientName) {
+        if ("WEB_EMBEDDED_PLAYER".equals(clientName)) return DefaultHeaders.USER_AGENT_SAFARI;
+        if ("WEB".equals(clientName)) return DefaultHeaders.USER_AGENT_WEB;
+        if ("MWEB".equals(clientName)) return DefaultHeaders.USER_AGENT_MOBILE_WEB;
+        return null;
+    }
 
     public static boolean isSupported(Context context) {
         return "app.smarttube.proxy".equals(context.getPackageName());
