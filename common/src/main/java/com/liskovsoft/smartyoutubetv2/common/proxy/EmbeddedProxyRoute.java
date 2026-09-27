@@ -213,9 +213,9 @@ public final class EmbeddedProxyRoute {
         if (result.equals(lastMediaResult)) return;
         lastMediaResult = result;
         if (status >= 400) {
-            recordFailure("视频流响应 " + host, new IOException("HTTP " + status));
+            recordFailure("视频流响应 " + result, new IOException("HTTP " + status));
         } else {
-            recordPlaybackEvent("视频流响应 " + host + " HTTP " + status);
+            recordPlaybackEvent("视频流响应 " + result);
         }
     }
 
